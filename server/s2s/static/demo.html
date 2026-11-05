@@ -193,13 +193,27 @@
     header { padding-left: max(18px, calc(50% - 360px)); padding-right: max(18px, calc(50% - 360px)); }
   }
 
-  /* ── 账号 ── */
-  .h-actions { display: flex; align-items: center; gap: 8px; pointer-events: auto; }
-  .hbtn { background: rgba(12,16,22,.42); border: 1px solid rgba(255,255,255,.14);
-    color: rgba(255,255,255,.78); border-radius: 999px; padding: 6px 12px; font-size: 11.5px;
-    cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-  .hbtn:hover { background: rgba(255,255,255,.12); color: #fff; }
-  #btnUser { pointer-events: none; color: #9ee8d3; border-color: rgba(79,191,165,.4); }
+  /* ── 账号入口：只有右上角一个头像 ── */
+  .avatar-btn { width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+    background: rgba(12,16,22,.42); border: 1px solid rgba(255,255,255,.16);
+    color: rgba(255,255,255,.85); font-size: 14px; font-weight: 600;
+    display: grid; place-items: center; pointer-events: auto;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .avatar-btn:active { transform: scale(.96); }
+
+  /* 用户卡片（底部弹窗） */
+  .ucard { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .uavatar { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 20px; font-weight: 700; flex: none;
+    background: radial-gradient(circle at 32% 28%,#6fc3ff,#2F80ED 58%,#1b5bbf); color: #fff; }
+  .uname { font-size: 16px; font-weight: 650; }
+  .uphone { font-size: 12.5px; color: rgba(255,255,255,.55); margin-top: 2px; }
+  .umeta { font-size: 12px; color: rgba(255,255,255,.5); padding: 10px 12px; margin-bottom: 16px;
+    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; }
+  .uactions { display: flex; flex-direction: column; gap: 10px; }
+  .uactions .primary, .uactions .ghost, .uactions .danger { width: 100%; padding: 12px; border-radius: 11px;
+    font-size: 14px; font-weight: 600; cursor: pointer; }
+  .uactions .danger { background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.34); color: #fca5a5; }
 
   /* ── 弹层（登录 / 确认） ── */
   .overlay { position: fixed; inset: 0; z-index: 60; background: rgba(3,6,11,.72);
@@ -244,16 +258,9 @@
       <div class="sub"><span class="dot" id="connDot"></span><span id="connText">待命</span></div>
     </div>
   </div>
-  <div class="h-actions">
-    <span class="hbtn hidden" id="btnUser"></span>
-    <button class="hbtn hidden" id="btnClear">清空</button>
-    <button class="hbtn hidden" id="btnLogout">退出</button>
-    <button class="hbtn" id="btnLogin">登录</button>
-    <div class="chip" id="camChip">
-      <svg viewBox="0 0 24 24"><path d="M15 8.5V6.8A1.8 1.8 0 0 0 13.2 5H4.8A1.8 1.8 0 0 0 3 6.8v10.4A1.8 1.8 0 0 0 4.8 19h8.4a1.8 1.8 0 0 0 1.8-1.8v-1.7l4.3 2.6a.8.8 0 0 0 1.2-.7V6.6a.8.8 0 0 0-1.2-.7L15 8.5Z"/></svg>
-      <span id="camText">摄像头关闭</span>
-    </div>
-  </div>
+  <button class="avatar-btn" id="btnUser" aria-label="账号">
+    <span id="avatarText">👤</span>
+  </button>
 </header>
 
 <main id="chat"></main>
@@ -275,6 +282,26 @@
 
 <input type="file" id="file" accept="image/*" hidden>
 <div id="status"></div>
+
+<!-- 用户卡片 -->
+<div class="overlay" id="userOverlay">
+  <div class="sheet">
+    <button class="x" id="userClose">✕</button>
+    <div class="ucard">
+      <div class="uavatar" id="uAvatar">🎀</div>
+      <div>
+        <div class="uname" id="uName">未登录</div>
+        <div class="uphone" id="uPhone">登录后可保存对话记录</div>
+      </div>
+    </div>
+    <div class="umeta" id="uMeta">登录后，对话记录会按账号保存，换设备也能接着聊。</div>
+    <div class="uactions">
+      <button class="ghost hidden" id="userClear">清空对话记录</button>
+      <button class="danger hidden" id="userLogout">退出登录</button>
+      <button class="primary hidden" id="userLogin">登录 / 注册</button>
+    </div>
+  </div>
+</div>
 
 <!-- 登录 -->
 <div class="overlay" id="loginOverlay">
@@ -370,7 +397,7 @@ const S = {
   echoSkip: false,      // 本地已加用户气泡时，跳过服务端回显的 asr_result
   rec: { ctx: null, stream: null, node: null, chunks: [], pre: [], voiceRun: 0, silentMs: 0,
          capturing: false, inRate: 16000, pos: 0 },
-  dec: null, playCtx: null, gain: null, nextAt: 0, playSrcs: [], ttsDone: false,
+  dec: null, playCtx: null, gain: null, nextAt: 0, playSrcs: [], ttsDone: false, mute: false,
   ai: { bub: null, text: '', final: true, useChunk: false },
 };
 
@@ -542,7 +569,7 @@ function onMessage(m) {
       break;
     case 'tts_start':
       initPlayer();
-      setHint('如意说话中…');
+      setHint('如意说话中…点话筒可打断');
       micState(S.live ? 'speak' : null);
       break;
     case 'tts_done':
@@ -552,17 +579,20 @@ function onMessage(m) {
     case 'done':
       aiFinish();
       S.ttsDone = true;
+      S.mute = false;
       S.echoSkip = false;
       maybeIdle();
       break;
     case 'aborted':
       aiFinish();
       stopPlayback();
+      S.mute = false;
       idle();
       break;
     case 'error':
       addSys('出错了：' + (m.message || '').slice(0, 140));
       S.echoSkip = false;
+      S.mute = false;
       aiFinish();
       stopPlayback();
       idle();
@@ -585,6 +615,20 @@ function idle() {
   S.ai.final = true;
   micState(S.live ? 'live' : null);
   setHint(S.live ? '聆听中…再点一次话筒结束' : '点击话筒，和如意说话');
+}
+
+/** 播报/思考中再点话筒：打断这一轮，立刻回到聆听（连接保留，下一句直接用） */
+function interruptRound() {
+  try {
+    if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ type: 'abort' }));
+  } catch (e) { /* 连接已断，本地收尾即可 */ }
+  S.mute = true;                 // 丢掉这一轮残余的下行音频块
+  stopPlayback();
+  if (S.ai.bub && !S.ai.final) aiFinish();
+  S.aiBusy = false;
+  S.ttsDone = true;
+  idle();
+  toast('已打断');
 }
 function maybeIdle() {
   if (!S.aiBusy) return;
@@ -633,6 +677,7 @@ function initPlayer() {
   S.dec.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 });
 }
 function onAudio(buf) {
+  if (S.mute) return;                        // 已打断：丢弃这一轮残余音频
   if (!S.dec || S.dec.state !== 'configured') return;
   const dv = new DataView(buf);
   let pos = 0, ts = 0;
@@ -808,8 +853,9 @@ function submitUtterance() {
   }
   S.aiBusy = true;
   S.ttsDone = false;
+  S.mute = false;
   micState('think');
-  setHint('如意思考中…');
+  setHint('如意思考中…点话筒可打断');
   sendTurn(frame);
 }
 
@@ -837,8 +883,6 @@ async function toggleCam() {
   $('#cam').srcObject = S.cam.stream;
   document.body.classList.add('cam-on');
   $('#btnCam').classList.add('active');
-  $('#camChip').classList.add('on');
-  $('#camText').textContent = '摄像头已开';
   S.cam.on = true;
   if (S.live) setHint('聆听中…画面会随每句话一起送给如意');
 }
@@ -848,8 +892,6 @@ function stopCam() {
   $('#cam').srcObject = null;
   document.body.classList.remove('cam-on');
   $('#btnCam').classList.remove('active');
-  $('#camChip').classList.remove('on');
-  $('#camText').textContent = '摄像头关闭';
   if (S.live) setHint('聆听中…再点一次话筒结束');
 }
 
@@ -917,11 +959,17 @@ function maskPhone(p) {
 }
 function updateAuthUI() {
   const logged = !!AUTH.user;
-  $('#btnLogin').classList.toggle('hidden', logged);
-  $('#btnLogout').classList.toggle('hidden', !logged);
-  $('#btnClear').classList.toggle('hidden', !logged && AUTH.required);
-  $('#btnUser').classList.toggle('hidden', !logged);
-  if (logged) $('#btnUser').textContent = AUTH.user.name || maskPhone(AUTH.user.phone);
+  const name = logged ? (AUTH.user.name || '如意用户') : '未登录';
+  $('#avatarText').textContent = logged ? name.trim().charAt(0) : '👤';
+  $('#uAvatar').textContent = logged ? name.trim().charAt(0) : '🎀';
+  $('#uName').textContent = name;
+  $('#uPhone').textContent = logged ? maskPhone(AUTH.user.phone) : '登录后可保存对话记录';
+  $('#uMeta').textContent = logged
+    ? '对话记录已按账号保存，换设备登录也能接着聊。'
+    : '登录后，对话记录会按账号保存，换设备也能接着聊。';
+  $('#userLogout').classList.toggle('hidden', !logged);
+  $('#userClear').classList.toggle('hidden', !logged);
+  $('#userLogin').classList.toggle('hidden', logged);
 }
 
 async function sendCode() {
@@ -1034,7 +1082,9 @@ async function logout() {
 $('#mic').addEventListener('click', () => {
   unlockAudio();
   if (AUTH.required && !AUTH.user) { openLogin(); return; }
-  S.live ? stopLive() : startLive();
+  if (!S.live) { startLive(); return; }     // 待机 → 开始聆听
+  if (S.aiBusy) { interruptRound(); return; }  // 播报/思考中 → 打断
+  stopLive();                                // 聆听中 → 关闭录音
 });
 $('#btnCam').addEventListener('click', toggleCam);
 $('#btnPhoto').addEventListener('click', () => { unlockAudio(); $('#file').click(); });
@@ -1043,9 +1093,23 @@ $('#file').addEventListener('change', function () {
   this.value = '';
 });
 
-$('#btnLogin').addEventListener('click', openLogin);
-$('#btnLogout').addEventListener('click', logout);
-$('#btnClear').addEventListener('click', askClear);
+$('#btnUser').addEventListener('click', () => {
+  updateAuthUI();
+  $('#userOverlay').classList.add('show');
+});
+$('#userClose').addEventListener('click', () => $('#userOverlay').classList.remove('show'));
+$('#userLogout').addEventListener('click', () => {
+  $('#userOverlay').classList.remove('show');
+  logout();
+});
+$('#userClear').addEventListener('click', () => {
+  $('#userOverlay').classList.remove('show');
+  askClear();
+});
+$('#userLogin').addEventListener('click', () => {
+  $('#userOverlay').classList.remove('show');
+  openLogin();
+});
 $('#lgSend').addEventListener('click', sendCode);
 $('#lgSubmit').addEventListener('click', doLogin);
 $('#lgCode').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
