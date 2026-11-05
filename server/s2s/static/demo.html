@@ -7,6 +7,7 @@
 <title>如意 · 语音对话</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  .hidden { display: none !important; }
   html, body { width: 100%; height: 100%; overflow: hidden; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -191,6 +192,44 @@
     #chat { padding-left: max(16px, calc(50% - 340px)); padding-right: max(16px, calc(50% - 340px)); }
     header { padding-left: max(18px, calc(50% - 360px)); padding-right: max(18px, calc(50% - 360px)); }
   }
+
+  /* ── 账号 ── */
+  .h-actions { display: flex; align-items: center; gap: 8px; pointer-events: auto; }
+  .hbtn { background: rgba(12,16,22,.42); border: 1px solid rgba(255,255,255,.14);
+    color: rgba(255,255,255,.78); border-radius: 999px; padding: 6px 12px; font-size: 11.5px;
+    cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .hbtn:hover { background: rgba(255,255,255,.12); color: #fff; }
+  #btnUser { pointer-events: none; color: #9ee8d3; border-color: rgba(79,191,165,.4); }
+
+  /* ── 弹层（登录 / 确认） ── */
+  .overlay { position: fixed; inset: 0; z-index: 60; background: rgba(3,6,11,.72);
+    backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
+    display: none; align-items: center; justify-content: center; padding: 22px; }
+  .overlay.show { display: flex; }
+  .sheet { position: relative; width: 100%; max-width: 400px; background: #0c131d;
+    border: 1px solid rgba(255,255,255,.16); border-radius: 20px; padding: 26px;
+    box-shadow: 0 40px 100px rgba(0,0,0,.6); }
+  .sheet h3 { font-size: 18px; margin: 0 0 6px; }
+  .sheet p { font-size: 12.5px; color: rgba(255,255,255,.6); margin: 0 0 18px; }
+  .sheet .x { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border-radius: 9px;
+    border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05);
+    color: rgba(255,255,255,.6); cursor: pointer; }
+  .sheet label { display: block; font-size: 12px; color: rgba(255,255,255,.55); margin: 0 0 6px; }
+  .sheet input { width: 100%; background: #080d15; border: 1px solid rgba(255,255,255,.16);
+    border-radius: 11px; color: #fff; padding: 11px 13px; font-size: 14px; outline: none;
+    -webkit-appearance: none; }
+  .sheet input:focus { border-color: rgba(47,128,237,.65); }
+  .sheet .mrow { display: flex; gap: 9px; margin-bottom: 12px; }
+  .sheet .primary { background: linear-gradient(135deg,#3b8cf5,#2F80ED); border: 0; color: #fff;
+    border-radius: 11px; padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .sheet .ghost { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16);
+    color: #fff; border-radius: 11px; padding: 11px 16px; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+  .sheet .err { color: #f87171; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  @media (max-width: 640px) {
+    .overlay { align-items: flex-end; padding: 0; }
+    .sheet { max-width: none; border-radius: 20px 20px 0 0;
+      padding: 22px 18px calc(22px + env(safe-area-inset-bottom)); }
+  }
 </style>
 </head>
 <body>
@@ -205,9 +244,15 @@
       <div class="sub"><span class="dot" id="connDot"></span><span id="connText">待命</span></div>
     </div>
   </div>
-  <div class="chip" id="camChip">
-    <svg viewBox="0 0 24 24"><path d="M15 8.5V6.8A1.8 1.8 0 0 0 13.2 5H4.8A1.8 1.8 0 0 0 3 6.8v10.4A1.8 1.8 0 0 0 4.8 19h8.4a1.8 1.8 0 0 0 1.8-1.8v-1.7l4.3 2.6a.8.8 0 0 0 1.2-.7V6.6a.8.8 0 0 0-1.2-.7L15 8.5Z"/></svg>
-    <span id="camText">摄像头关闭</span>
+  <div class="h-actions">
+    <span class="hbtn hidden" id="btnUser"></span>
+    <button class="hbtn hidden" id="btnClear">清空</button>
+    <button class="hbtn hidden" id="btnLogout">退出</button>
+    <button class="hbtn" id="btnLogin">登录</button>
+    <div class="chip" id="camChip">
+      <svg viewBox="0 0 24 24"><path d="M15 8.5V6.8A1.8 1.8 0 0 0 13.2 5H4.8A1.8 1.8 0 0 0 3 6.8v10.4A1.8 1.8 0 0 0 4.8 19h8.4a1.8 1.8 0 0 0 1.8-1.8v-1.7l4.3 2.6a.8.8 0 0 0 1.2-.7V6.6a.8.8 0 0 0-1.2-.7L15 8.5Z"/></svg>
+      <span id="camText">摄像头关闭</span>
+    </div>
   </div>
 </header>
 
@@ -231,6 +276,36 @@
 <input type="file" id="file" accept="image/*" hidden>
 <div id="status"></div>
 
+<!-- 登录 -->
+<div class="overlay" id="loginOverlay">
+  <div class="sheet">
+    <button class="x" id="lgClose">✕</button>
+    <h3>登录后开始对话</h3>
+    <p>手机号验证码登录，未注册会自动创建账号。对话记录按账号保存，换设备也能接着聊。</p>
+    <div class="mrow">
+      <input id="lgPhone" type="tel" inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="手机号">
+      <button class="ghost" id="lgSend">获取验证码</button>
+    </div>
+    <div class="mrow">
+      <input id="lgCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位验证码">
+    </div>
+    <div class="err" id="lgErr"></div>
+    <button class="primary" id="lgSubmit" style="width:100%">登录</button>
+  </div>
+</div>
+
+<!-- 确认 -->
+<div class="overlay" id="cfOverlay">
+  <div class="sheet">
+    <h3>清空对话记录</h3>
+    <p>会删除你和如意在这个账号下的全部历史，无法恢复。</p>
+    <div class="mrow">
+      <button class="ghost grow" id="cfNo" style="flex:1">取消</button>
+      <button class="primary" id="cfYes" style="flex:1">确认清空</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ==========================================================================
  * 如意语音对话 Demo
@@ -244,6 +319,39 @@
  * ========================================================================== */
 const $ = s => document.querySelector(s);
 const chat = $('#chat');
+
+/* ───────── 账号与历史 ───────── */
+const AUTH = {
+  token: localStorage.getItem('sisi_demo_token') || '',
+  user: null,
+  required: true,
+  guest: (() => {
+    let g = localStorage.getItem('sisi_demo_guest');
+    if (!g) {
+      g = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem('sisi_demo_guest', g);
+    }
+    return g;
+  })(),
+};
+
+function withGuest(path) {
+  return path + (path.includes('?') ? '&' : '?') + 'guest=' + encodeURIComponent(AUTH.guest);
+}
+async function apiJson(path, opts) {
+  const o = Object.assign({}, opts || {});
+  o.headers = Object.assign({ 'Content-Type': 'application/json' }, o.headers || {});
+  if (AUTH.token) o.headers.Authorization = 'Bearer ' + AUTH.token;
+  const r = await fetch(withGuest(path), o);
+  let j = null;
+  try { j = await r.json(); } catch (e) { /* 非 JSON */ }
+  if (!r.ok) {
+    const err = new Error((j && j.detail) || '请求失败');
+    err.status = r.status;
+    throw err;
+  }
+  return j || {};
+}
 
 const CFG = {
   silenceMs: 600,      // 静音判定（项目统一规则）
@@ -362,7 +470,10 @@ function wsUrl() {
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   // 页面可能挂在子路径下（如 /ruyi/demo），WS 端点跟着页面走，避免打到别的服务
   const base = location.pathname.replace(/[^/]*$/, '');
-  return proto + location.host + base + 's2s/ws';
+  const q = new URLSearchParams();
+  if (AUTH.token) q.set('token', AUTH.token);
+  else q.set('guest', AUTH.guest);
+  return proto + location.host + base + 's2s/ws?' + q.toString();
 }
 function bindSocket(ws) {
   ws.binaryType = 'arraybuffer';
@@ -458,6 +569,13 @@ function onMessage(m) {
       break;
     case 'closed':
       try { S.ws.close(); } catch (e) {}
+      break;
+    case 'auth_required':
+      // 服务端强制登录：清本地令牌，弹登录
+      AUTH.token = ''; AUTH.user = null;
+      localStorage.removeItem('sisi_demo_token');
+      updateAuthUI();
+      openLogin();
       break;
   }
 }
@@ -787,8 +905,137 @@ function unlockAudio() {
   } catch (e) {}
 }
 
+/* ───────── 登录 / 历史 ───────── */
+let lgTimer = 0, lgCd = 0;
+
+function openLogin() {
+  $('#lgErr').textContent = '';
+  $('#loginOverlay').classList.add('show');
+}
+function maskPhone(p) {
+  return p ? p.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : '';
+}
+function updateAuthUI() {
+  const logged = !!AUTH.user;
+  $('#btnLogin').classList.toggle('hidden', logged);
+  $('#btnLogout').classList.toggle('hidden', !logged);
+  $('#btnClear').classList.toggle('hidden', !logged && AUTH.required);
+  $('#btnUser').classList.toggle('hidden', !logged);
+  if (logged) $('#btnUser').textContent = AUTH.user.name || maskPhone(AUTH.user.phone);
+}
+
+async function sendCode() {
+  const phone = $('#lgPhone').value.trim();
+  $('#lgErr').textContent = '';
+  if (!/^1[3-9]\d{9}$/.test(phone)) { $('#lgErr').textContent = '请输入正确的手机号'; return; }
+  $('#lgSend').disabled = true;
+  try {
+    await apiJson('api/auth/send_code', { method: 'POST', body: JSON.stringify({ phone }) });
+    toast('验证码已发送');
+    lgCd = 60;
+    clearInterval(lgTimer);
+    lgTimer = setInterval(() => {
+      lgCd -= 1;
+      if (lgCd <= 0) {
+        clearInterval(lgTimer);
+        $('#lgSend').disabled = false;
+        $('#lgSend').textContent = '获取验证码';
+      } else {
+        $('#lgSend').textContent = lgCd + 's';
+      }
+    }, 1000);
+  } catch (e) {
+    $('#lgErr').textContent = e.message;
+    $('#lgSend').disabled = false;
+  }
+}
+
+async function doLogin() {
+  const phone = $('#lgPhone').value.trim();
+  const code = $('#lgCode').value.trim();
+  $('#lgErr').textContent = '';
+  if (!/^1[3-9]\d{9}$/.test(phone)) { $('#lgErr').textContent = '请输入正确的手机号'; return; }
+  if (!code) { $('#lgErr').textContent = '请输入验证码'; return; }
+  const btn = $('#lgSubmit');
+  btn.disabled = true; btn.textContent = '登录中…';
+  try {
+    const j = await apiJson('api/auth/login', {
+      method: 'POST', body: JSON.stringify({ phone, code }),
+    });
+    AUTH.token = j.token;
+    AUTH.user = j.user;
+    localStorage.setItem('sisi_demo_token', j.token);
+    $('#loginOverlay').classList.remove('show');
+    $('#lgCode').value = '';
+    updateAuthUI();
+    chat.innerHTML = '';                       // 换掉访客气泡，展示该账号自己的历史
+    addSys('已登录：' + (AUTH.user.name || maskPhone(AUTH.user.phone)));
+    await loadHistory();
+    setHint('点击话筒，和如意说话');
+    toast('登录成功');
+  } catch (e) {
+    $('#lgErr').textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '登录';
+  }
+}
+
+function addAiStatic(text) {
+  const row = document.createElement('div');
+  row.className = 'row ai';
+  const b = document.createElement('div');
+  b.className = 'bub';
+  b.textContent = text;
+  row.appendChild(b);
+  chat.appendChild(row);
+  scrollBottom();
+}
+
+async function loadHistory() {
+  try {
+    const h = await apiJson('api/history');
+    AUTH.required = !!h.auth_required;
+    const msgs = h.messages || [];
+    if (msgs.length) {
+      addSys('历史对话');
+      msgs.forEach(m => (m.role === 'user' ? addUser(m.content, null) : addAiStatic(m.content)));
+      addSys('以上是历史，继续说就行');
+    }
+  } catch (e) { /* 历史拉取失败不影响对话 */ }
+}
+
+function askClear() { $('#cfOverlay').classList.add('show'); }
+
+async function doClear() {
+  $('#cfOverlay').classList.remove('show');
+  try {
+    await apiJson('api/history/clear', { method: 'POST' });
+  } catch (e) {
+    toast(e.message, 'err');
+    return;
+  }
+  chat.innerHTML = '';
+  addSys('对话记录已清空');
+  toast('已清空');
+}
+
+async function logout() {
+  try { await apiJson('api/auth/logout', { method: 'POST' }); } catch (e) { /* 会话可能已过期 */ }
+  AUTH.token = ''; AUTH.user = null;
+  localStorage.removeItem('sisi_demo_token');
+  if (S.live) stopLive();
+  chat.innerHTML = '';
+  addSys('已退出登录');
+  updateAuthUI();
+  if (AUTH.required) openLogin();
+}
+
 /* ───────── 事件绑定 ───────── */
-$('#mic').addEventListener('click', () => { unlockAudio(); S.live ? stopLive() : startLive(); });
+$('#mic').addEventListener('click', () => {
+  unlockAudio();
+  if (AUTH.required && !AUTH.user) { openLogin(); return; }
+  S.live ? stopLive() : startLive();
+});
 $('#btnCam').addEventListener('click', toggleCam);
 $('#btnPhoto').addEventListener('click', () => { unlockAudio(); $('#file').click(); });
 $('#file').addEventListener('change', function () {
@@ -796,12 +1043,44 @@ $('#file').addEventListener('change', function () {
   this.value = '';
 });
 
+$('#btnLogin').addEventListener('click', openLogin);
+$('#btnLogout').addEventListener('click', logout);
+$('#btnClear').addEventListener('click', askClear);
+$('#lgSend').addEventListener('click', sendCode);
+$('#lgSubmit').addEventListener('click', doLogin);
+$('#lgCode').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+$('#lgPhone').addEventListener('keydown', e => { if (e.key === 'Enter') sendCode(); });
+$('#lgClose').addEventListener('click', () => $('#loginOverlay').classList.remove('show'));
+$('#cfNo').addEventListener('click', () => $('#cfOverlay').classList.remove('show'));
+$('#cfYes').addEventListener('click', doClear);
+
 /* ───────── 启动 ───────── */
 if (!('AudioDecoder' in window)) {
   addSys('当前浏览器不支持 WebCodecs 音频解码，请用 Chrome / Edge / Safari 16.4+ 打开');
 }
-addSys('点话筒开始，说完一句自动发送；开摄像头后每句话都会带上当前画面');
-setHint('点击话筒，和如意说话');
+
+(async function boot() {
+  if (AUTH.token) {
+    try {
+      AUTH.user = (await apiJson('api/auth/me')).user;
+    } catch (e) {
+      AUTH.token = '';
+      localStorage.removeItem('sisi_demo_token');
+    }
+  }
+  await loadHistory();           // 顺带拿到服务端的 auth_required
+  updateAuthUI();
+  if (AUTH.user) {
+    addSys('已登录：' + (AUTH.user.name || maskPhone(AUTH.user.phone)));
+    setHint('点击话筒，和如意说话');
+  } else if (AUTH.required) {
+    setHint('请先登录后开始对话');
+    openLogin();
+  } else {
+    addSys('点话筒开始，说完一句自动发送；开摄像头后每句话都会带上当前画面');
+    setHint('点击话筒，和如意说话');
+  }
+})();
 </script>
 </body>
 </html>

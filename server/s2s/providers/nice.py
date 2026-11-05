@@ -16,20 +16,31 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
+
+log = logging.getLogger("s2s.proxy")
 
 
 class NiceS2SProxy:
     """单连接代理：run() 后双向泵，直到任一侧断开。"""
 
-    def __init__(self, nice_url: str, nice_api_key: str):
+    def __init__(self, nice_url: str, nice_api_key: str,
+                 history: list[dict] | None = None, on_done=None):
+        """
+        history：建连时注入首帧 messages，实现「跨连接」的多轮上下文；
+        on_done(msg)：每轮结束（done）回调，用于把对话落到本地库。
+        两者都可为空（固件接入时就不需要）。
+        """
         # 云端地址：url 尾部统一补 ?api_key=xxx。固件 URL 里的 api_key 是设备侧编译值，
         # 云端认的是服务端配置的这把钥匙；首帧 JSON 的 api_key 同样在转发前替换。
         sep = "&" if "?" in nice_url else "?"
         self._upstream_url = f"{nice_url}{sep}api_key={nice_api_key}"
         self._api_key = nice_api_key
+        self._history = history or []
+        self._on_done = on_done
 
     async def run(self, client_ws) -> None:
         """接管客户端连接：连接云端 → 双向转发 → 任一方向结束即收尾。"""
@@ -54,6 +65,9 @@ class NiceS2SProxy:
                             try:
                                 frame = json.loads(text)
                                 frame["api_key"] = self._api_key
+                                # 本地历史注入：云端没有这个账号的历史，靠首帧 messages 带过去
+                                if self._history and not frame.get("messages"):
+                                    frame["messages"] = self._history
                                 text = json.dumps(frame, ensure_ascii=False)
                             except json.JSONDecodeError:
                                 pass
@@ -65,8 +79,18 @@ class NiceS2SProxy:
                 async for msg in upstream:
                     if isinstance(msg, bytes):
                         await client_ws.send_bytes(msg)
-                    else:
-                        await client_ws.send_text(msg)
+                        continue
+                    await client_ws.send_text(msg)
+                    if self._on_done:
+                        try:
+                            d = json.loads(msg)
+                        except (ValueError, TypeError):
+                            continue
+                        if d.get("type") in ("done", "aborted"):
+                            try:
+                                self._on_done(d)
+                            except Exception:
+                                log.exception("记录对话历史失败")
 
             tasks = [
                 asyncio.create_task(client_to_cloud()),

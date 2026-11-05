@@ -9,6 +9,14 @@ server:
   # 管理后台访问密码，留空不鉴权（仅限内网）
   admin_password: ""
 
+# ── 登录与历史 ──
+# demo 页默认要求手机号登录，对话记录按账号存本地 SQLite（data/sisi.db）
+# 没有认证服务时把 required 改成 false：不强制登录，历史按浏览器 guest_id 隔离
+auth:
+  required: true
+  url: http://127.0.0.1:9885     # 手机号+验证码认证服务（提供 /api/auth/send_code、/api/auth/login）
+  db_name: nice_ai
+
 # ── 默认模式：如意云 S2S API（asr/llm/tts 全走云端，本服务只做转发）──
 nice:
   url: wss://dev.nice-ai.cn/s2s/

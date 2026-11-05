@@ -31,6 +31,13 @@ DEFAULT_CONFIG: dict = {
         # 管理后台访问密码；留空表示不做鉴权（仅限本机/内网使用）
         "admin_password": "",
     },
+    # 登录：demo 页要求手机号登录，对话历史按用户存本地库
+    # required=false 时不强制登录，历史按浏览器 guest_id 隔离（适合纯内网自用）
+    "auth": {
+        "required": True,
+        "url": "http://127.0.0.1:9885",
+        "db_name": "nice_ai",
+    },
     # 默认模式：全部能力走如意云 S2S（本服务只做固件协议 ↔ 云端协议的透明转发）
     "nice": {
         "url": "wss://dev.nice-ai.cn/s2s/",

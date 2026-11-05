@@ -27,7 +27,7 @@ import time
 from .audio import DOWN_SAMPLE_RATE, OpusStreamDecoder, OpusStreamEncoder
 from .config import all_providers_ready
 from .providers import build_asr, build_llm, build_tts
-from .store import get_ai, get_voice
+from .store import append_message, get_ai, get_voice, list_messages
 
 # 对话历史上限（含 system 之外的消息条数）
 _MAX_HISTORY = 20
@@ -38,9 +38,10 @@ _MAX_SENT_CHARS = 60
 
 
 class FirmwareSession:
-    def __init__(self, ws, cfg: dict):
+    def __init__(self, ws, cfg: dict, owner: str = ""):
         self._ws = ws
         self._cfg = cfg
+        self._owner = owner            # u:<uid> / g:<guest>，空表示不存历史
         self._round = 0                 # 当前轮次（从 1 开始）
         self._round_open = False        # 是否正在收集本轮上行音频（首个 binary 帧开轮，listen_stop 关轮）
         self._running: asyncio.Task | None = None   # 本轮 ASR→LLM→TTS 流水线任务
@@ -49,6 +50,10 @@ class FirmwareSession:
         self._upstream_format = "opus_raw"  # opus_raw=固件（需解码）；pcm=浏览器 demo（直用）
         self._decoder = OpusStreamDecoder(16000)
         self._messages: list[dict] = []  # 对话历史（OpenAI 格式）
+        if owner:
+            # 跨连接续聊：把该用户最近的历史带进来
+            self._messages = [{"role": m["role"], "content": m["content"]}
+                              for m in list_messages(owner, _MAX_HISTORY)]
         self._system_prompt = ""
         self._language = "zh"
         self._voice = ""                # 固件首帧带的音色偏好（厂商侧映射见各 provider）
@@ -288,6 +293,9 @@ class FirmwareSession:
             # 写入历史
             self._messages.append({"role": "user", "content": asr_text})
             self._messages.append({"role": "assistant", "content": full_text.strip()})
+            if self._owner:
+                append_message(self._owner, "user", asr_text)
+                append_message(self._owner, "assistant", full_text.strip())
             if len(self._messages) > _MAX_HISTORY * 2:
                 self._messages = self._messages[-_MAX_HISTORY * 2:]
 

@@ -50,6 +50,26 @@ def init_db() -> None:
                 voice_id INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_messages_owner ON messages(owner, id);
         """)
 
 
@@ -140,6 +160,87 @@ def delete_ai(ai_id: int) -> bool:
     with _conn() as conn:
         cur = conn.execute("DELETE FROM ais WHERE id=?", (ai_id,))
     return cur.rowcount > 0
+
+
+# ─── 账号与会话 ─────────────────────────────────────────────────
+
+SESSION_DAYS = 30
+
+
+def upsert_user(phone: str, name: str = "") -> dict:
+    """手机号登录成功后落本地用户（同一个手机号复用同一条记录）。"""
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
+        if row:
+            if name and name != row["name"]:
+                conn.execute("UPDATE users SET name=? WHERE id=?", (name, row["id"]))
+            uid = row["id"]
+        else:
+            uid = conn.execute(
+                "INSERT INTO users (phone, name, created_at) VALUES (?,?,?)",
+                (phone, name, int(time.time())),
+            ).lastrowid
+        row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    return {"id": row["id"], "phone": row["phone"], "name": row["name"]}
+
+
+def create_session(user_id: int) -> str:
+    import secrets
+    token = secrets.token_hex(24)
+    now = int(time.time())
+    with _conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at<?", (now,))
+        conn.execute(
+            "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+            (token, user_id, now, now + SESSION_DAYS * 86400),
+        )
+    return token
+
+
+def session_user(token: str) -> dict | None:
+    if not token:
+        return None
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id "
+            "WHERE s.token=? AND s.expires_at>?", (token, int(time.time()))).fetchone()
+    if not row:
+        return None
+    return {"id": row["id"], "phone": row["phone"], "name": row["name"]}
+
+
+def delete_session(token: str) -> None:
+    with _conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE token=?", (token,))
+
+
+# ─── 对话历史（按 owner 隔离：u:<uid> 或 g:<guest_id>） ──────────
+
+def append_message(owner: str, role: str, content: str) -> None:
+    if not owner or not content:
+        return
+    with _conn() as conn:
+        conn.execute("INSERT INTO messages (owner, role, content, created_at) VALUES (?,?,?,?)",
+                     (owner, role, content, int(time.time())))
+
+
+def list_messages(owner: str, limit: int = 20) -> list[dict]:
+    """取最近 limit 条，按时间正序返回（直接喂给 LLM）。"""
+    if not owner:
+        return []
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT role, content, created_at FROM messages WHERE owner=? "
+            "ORDER BY id DESC LIMIT ?", (owner, limit)).fetchall()
+    return [{"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+            for r in reversed(rows)]
+
+
+def clear_messages(owner: str) -> None:
+    if not owner:
+        return
+    with _conn() as conn:
+        conn.execute("DELETE FROM messages WHERE owner=?", (owner,))
 
 
 init_db()
