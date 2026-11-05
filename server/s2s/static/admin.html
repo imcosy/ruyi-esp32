@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sisi-esp-server 管理后台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f2f4f8; color: #1c2733; min-height: 100vh; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #6b7a8c; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 14px; padding: 18px 20px; margin-bottom: 16px;
+          box-shadow: 0 4px 16px rgba(28,39,51,.06); }
+  .card h2 { font-size: 16px; margin-bottom: 4px; }
+  .card .desc { font-size: 12.5px; color: #6b7a8c; margin-bottom: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 6px; }
+  .chip { padding: 8px 16px; border-radius: 999px; border: 1.5px solid #d7dee6;
+          background: #fff; font-size: 14px; cursor: pointer; user-select: none;
+          transition: all .15s; }
+  .chip.on { border-color: #2f80ed; background: #eaf3ff; color: #2f80ed; font-weight: 600; }
+  .field { margin-top: 12px; }
+  .field label { display: block; font-size: 12.5px; color: #4a5a6b; margin-bottom: 4px; }
+  .field input { width: 100%; padding: 10px 12px; border: 1.5px solid #d7dee6;
+                 border-radius: 10px; font-size: 14px; outline: none; }
+  .field input:focus { border-color: #2f80ed; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .vendor { border-top: 1px dashed #e3e9ef; padding-top: 10px; margin-top: 10px; }
+  .vendor h3 { font-size: 14px; margin-bottom: 6px; }
+  .vendor.disabled { opacity: .45; }
+  .savebar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,.92);
+             backdrop-filter: blur(8px); border-top: 1px solid #e3e9ef;
+             padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; }
+  .savebar .state { font-size: 13px; color: #6b7a8c; }
+  .savebar button { padding: 10px 26px; border: none; border-radius: 10px;
+                    background: #2f80ed; color: #fff; font-size: 14px; cursor: pointer; }
+  .savebar button:disabled { background: #a9c7f2; }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } .wrap { padding-top: 16px; } }
+  /* toast：居中半透明遮罩（禁用 alert/confirm） */
+  #toast { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+           background: rgba(0,0,0,.35); z-index: 99; }
+  #toast.show { display: flex; }
+  #toast .msg { background: rgba(28,39,51,.92); color: #fff; padding: 14px 22px;
+                border-radius: 12px; font-size: 14px; max-width: 78vw; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>sisi-esp-server</h1>
+  <div class="sub">ESP32 语音对话服务端 · 改完即自动保存</div>
+
+  <div class="card">
+    <h2>服务模式</h2>
+    <div class="desc">默认使用如意云 API（只填一把 api_key，ASR/LLM/TTS 全在云端）；选「自编排」后在本机串接下面的厂商接口。</div>
+    <div class="chips" id="modeChips">
+      <div class="chip" data-mode="nice">如意云 API（默认）</div>
+      <div class="chip" data-mode="self">自编排（对接厂商）</div>
+    </div>
+    <div id="niceFields">
+      <div class="field">
+        <label>如意云 api_key</label>
+        <input id="nice_api_key" placeholder="向如意云申请的开发者密钥">
+      </div>
+    </div>
+  </div>
+
+  <div id="selfCards" style="display:none">
+    <div class="card">
+      <h2>语音识别 ASR</h2>
+      <div class="chips" id="asrChips">
+        <div class="chip" data-v="doubao">字节 · 豆包</div>
+        <div class="chip" data-v="aliyun">阿里 · Paraformer</div>
+      </div>
+      <div class="vendor" id="asr_doubao">
+        <h3>字节火山引擎</h3>
+        <div class="row">
+          <div class="field"><label>App ID</label><input data-path="asr/doubao/app_id"></div>
+          <div class="field"><label>Access Token</label><input data-path="asr/doubao/access_token"></div>
+        </div>
+      </div>
+      <div class="vendor" id="asr_aliyun">
+        <h3>阿里云百炼</h3>
+        <div class="field"><label>API Key</label><input data-path="asr/aliyun/api_key"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>对话大模型 LLM</h2>
+      <div class="chips" id="llmChips">
+        <div class="chip" data-v="doubao">字节 · 豆包</div>
+        <div class="chip" data-v="aliyun">阿里 · 通义</div>
+        <div class="chip" data-v="deepseek">DeepSeek</div>
+        <div class="chip" data-v="zhipu">智谱 · GLM</div>
+      </div>
+      <div class="vendor" id="llm_doubao">
+        <h3>字节火山方舟</h3>
+        <div class="row">
+          <div class="field"><label>API Key</label><input data-path="llm/doubao/api_key"></div>
+          <div class="field"><label>模型</label><input data-path="llm/doubao/model"></div>
+        </div>
+      </div>
+      <div class="vendor" id="llm_aliyun">
+        <h3>阿里云百炼</h3>
+        <div class="row">
+          <div class="field"><label>API Key</label><input data-path="llm/aliyun/api_key"></div>
+          <div class="field"><label>模型</label><input data-path="llm/aliyun/model"></div>
+        </div>
+      </div>
+      <div class="vendor" id="llm_deepseek">
+        <h3>DeepSeek</h3>
+        <div class="row">
+          <div class="field"><label>API Key</label><input data-path="llm/deepseek/api_key"></div>
+          <div class="field"><label>模型</label><input data-path="llm/deepseek/model"></div>
+        </div>
+      </div>
+      <div class="vendor" id="llm_zhipu">
+        <h3>智谱开放平台</h3>
+        <div class="row">
+          <div class="field"><label>API Key</label><input data-path="llm/zhipu/api_key"></div>
+          <div class="field"><label>模型</label><input data-path="llm/zhipu/model"></div>
+        </div>
+      </div>
+      <div class="field"><button class="chip" id="btnTestLlm">测试 LLM 连通性</button></div>
+    </div>
+
+    <div class="card">
+      <h2>语音合成 TTS</h2>
+      <div class="chips" id="ttsChips">
+        <div class="chip" data-v="doubao">字节 · 豆包</div>
+        <div class="chip" data-v="aliyun">阿里 · CosyVoice</div>
+      </div>
+      <div class="vendor" id="tts_doubao">
+        <h3>字节火山引擎</h3>
+        <div class="row">
+          <div class="field"><label>App ID</label><input data-path="tts/doubao/app_id"></div>
+          <div class="field"><label>Access Token</label><input data-path="tts/doubao/access_token"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>音色（如 zh_female_ruyi）</label><input data-path="tts/doubao/voice"></div>
+          <div class="field"><label>语速</label><input data-path="tts/doubao/speed_ratio"></div>
+        </div>
+      </div>
+      <div class="vendor" id="tts_aliyun">
+        <h3>阿里云百炼</h3>
+        <div class="row">
+          <div class="field"><label>API Key</label><input data-path="tts/aliyun/api_key"></div>
+          <div class="field"><label>音色（如 longxiaochun）</label><input data-path="tts/aliyun/voice"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>接入安全</h2>
+    <div class="desc">api_keys 白名单：固件首帧 api_key 必须在其中才允许接入（逗号分隔，留空不校验）。admin_password：配置页访问密码，留空不鉴权。</div>
+    <div class="row">
+      <div class="field"><label>固件 api_key 白名单</label><input id="server_api_keys" placeholder="key1,key2"></div>
+      <div class="field"><label>后台访问密码</label><input id="server_admin_password" type="password"></div>
+    </div>
+  </div>
+</div>
+
+<div class="savebar">
+  <span class="state" id="saveState">加载中…</span>
+  <button id="btnSave">保存</button>
+</div>
+<div id="toast"><div class="msg"></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let cfg = null;
+let dirtyTimer = null;
+
+function toast(msg, ms = 2200) {
+  const t = $('#toast');
+  t.querySelector('.msg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+function setSaveState(text) { $('#saveState').textContent = text; }
+
+function collect() {
+  const out = JSON.parse(JSON.stringify(cfg));
+  const nice = $('#nice_api_key').value.trim();
+  const mode = document.querySelector('#modeChips .chip.on').dataset.mode;
+  out.nice.api_key = nice;
+  const selfMode = mode === 'self';
+  out.asr.provider = selfMode ? document.querySelector('#asrChips .chip.on').dataset.v : 'nice';
+  out.llm.provider = selfMode ? document.querySelector('#llmChips .chip.on').dataset.v : 'nice';
+  out.tts.provider = selfMode ? document.querySelector('#ttsChips .chip.on').dataset.v : 'nice';
+  document.querySelectorAll('input[data-path]').forEach(el => {
+    const [a, b, c] = el.dataset.path.split('/');
+    let v = el.value;
+    if (c === 'speed_ratio') v = parseFloat(v) || 1.0;
+    out[a][b][c] = v;
+  });
+  out.server.api_keys = $('#server_api_keys').value.split(',').map(s => s.trim()).filter(Boolean);
+  out.server.admin_password = $('#server_admin_password').value;
+  return out;
+}
+
+async function save() {
+  setSaveState('保存中…');
+  try {
+    const resp = await fetch('/admin/api/config', {
+      method: 'POST', headers: apiHeaders(),
+      body: JSON.stringify(collect())
+    });
+    const r = await resp.json();
+    if (!resp.ok) throw new Error(r.detail || resp.status);
+    setSaveState('已保存 ' + new Date().toLocaleTimeString() + (r.ready ? '' : '（' + r.missing + '）'));
+    if (!r.ready) toast('配置不完整：' + r.missing);
+  } catch (e) {
+    setSaveState('保存失败');
+    toast('保存失败：' + e.message);
+  }
+}
+
+function scheduleSave() {
+  setSaveState('有改动，自动保存中…');
+  clearTimeout(dirtyTimer);
+  dirtyTimer = setTimeout(save, 600);
+}
+
+function bindChips(sel, onChange) {
+  document.querySelectorAll(sel + ' .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll(sel + ' .chip').forEach(c => c.classList.remove('on'));
+      chip.classList.add('on');
+      if (onChange) onChange(chip.dataset.v || chip.dataset.mode);
+      scheduleSave();
+    });
+  });
+}
+
+function render() {
+  const selfMode = !(cfg.asr.provider === 'nice' && cfg.llm.provider === 'nice' && cfg.tts.provider === 'nice');
+  select('#modeChips', selfMode ? 'self' : 'nice');
+  $('#niceFields').style.display = selfMode ? 'none' : 'block';
+  $('#selfCards').style.display = selfMode ? 'block' : 'none';
+  if (selfMode) {
+    select('#asrChips', cfg.asr.provider);
+    select('#llmChips', cfg.llm.provider);
+    select('#ttsChips', cfg.tts.provider);
+    syncVendors('asrChips', 'asr');
+    syncVendors('llmChips', 'llm');
+    syncVendors('ttsChips', 'tts');
+  }
+  $('#nice_api_key').value = cfg.nice.api_key || '';
+  $('#server_api_keys').value = (cfg.server.api_keys || []).join(',');
+  $('#server_admin_password').value = cfg.server.admin_password || '';
+  document.querySelectorAll('input[data-path]').forEach(el => {
+    const [a, b, c] = el.dataset.path.split('/');
+    el.value = (cfg[a] && cfg[a][b] && cfg[a][b][c]) ?? '';
+  });
+  setSaveState('已就绪');
+}
+
+function select(sel, v) {
+  document.querySelectorAll(sel + ' .chip').forEach(c => c.classList.toggle('on', c.dataset.v === v || c.dataset.mode === v));
+}
+
+function syncVendors(chipSel, section) {
+  const active = document.querySelector(chipSel + ' .chip.on');
+  const v = active ? active.dataset.v : null;
+  document.querySelectorAll(`#${section}_${'doubao'}, #${section}_aliyun, #${section}_deepseek, #${section}_zhipu`)
+    .forEach(el => { el.classList.toggle('disabled', !el.id.endsWith('_' + v)); });
+}
+
+function refreshSelfDisplay() {
+  syncVendors('asrChips', 'asr');
+  syncVendors('llmChips', 'llm');
+  syncVendors('ttsChips', 'tts');
+}
+
+bindChips('#modeChips', mode => {
+  const selfMode = mode === 'self';
+  $('#niceFields').style.display = selfMode ? 'none' : 'block';
+  $('#selfCards').style.display = selfMode ? 'block' : 'none';
+  if (selfMode) refreshSelfDisplay();
+});
+bindChips('#asrChips', refreshSelfDisplay);
+bindChips('#llmChips', refreshSelfDisplay);
+bindChips('#ttsChips', refreshSelfDisplay);
+
+document.addEventListener('input', e => {
+  if (e.target.matches('input')) scheduleSave();
+});
+$('#btnSave').addEventListener('click', save);
+
+$('#btnTestLlm').addEventListener('click', async () => {
+  const btn = $('#btnTestLlm');
+  btn.textContent = '测试中…';
+  try {
+    const resp = await fetch('/admin/api/test/llm', { method: 'POST', headers: apiHeaders() });
+    const r = await resp.json();
+    toast(r.message, 3500);
+  } catch (e) { toast('测试请求失败：' + e.message); }
+  btn.textContent = '测试 LLM 连通性';
+});
+
+(async () => {
+  let resp = await apiGet();
+  if (resp.status === 401) {
+    await askToken();
+    resp = await apiGet();
+  }
+  try {
+    if (!resp.ok) throw new Error(resp.status);
+    cfg = await resp.json();
+    render();
+  } catch (e) {
+    toast('加载配置失败：' + e.message, 5000);
+    setSaveState('加载失败');
+  }
+})();
+
+function apiHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  const token = sessionStorage.getItem('adminToken');
+  if (token) h['X-Admin-Token'] = token;
+  return h;
+}
+function apiGet() {
+  return fetch('/admin/api/config', { headers: apiHeaders() });
+}
+
+/* 后台密码启用时：居中弹层输入（对齐后台约定：不用 prompt/alert） */
+function askToken() {
+  return new Promise(resolve => {
+    const t = $('#toast');
+    t.querySelector('.msg').innerHTML =
+      '<div style="margin-bottom:10px">请输入后台访问密码</div>' +
+      '<input id="adminTokenInput" type="password" style="width:60vw;padding:10px;border-radius:10px;border:1.5px solid #4CD9EB;background:#222E39;color:#fff;font-size:15px;text-align:center">';
+    t.classList.add('show');
+    const input = document.getElementById('adminTokenInput');
+    input.focus();
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        sessionStorage.setItem('adminToken', input.value.trim());
+        t.classList.remove('show');
+        resolve();
+      }
+    });
+  });
+}
+</script>
+</body>
+</html>

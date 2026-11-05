@@ -1,0 +1,169 @@
+menu "Nice-AI"
+
+config OTA_URL
+    string "Default OTA URL"
+    default "wss://dev.nice-ai.cn/s2s/ws/"
+    help
+        The application will access this URL to check for new firmwares and server address.
+
+config S2S_API_KEY
+    string "S2S API Key"
+    default ""
+    help
+        API Key for S2S (Speech-to-Speech) service authentication.
+        Leave empty to use the server's default key, or fill your own key
+        applied from https://dev.nice-ai.cn/podcast/api-docs (申请 S2S Key).
+        编译前在 menuconfig 填入你的 S2S API Key；
+        免费申请：https://dev.nice-ai.cn/podcast/api-docs
+
+# ★ OTA_VERSION_URL 项已删除（2026-09-12）：OTA 版本检查地址按板型在 ota.cc 编译期
+#   决定（kOtaVersionUrl）。教训：Kconfig string 项被 sdkconfig 固化后，ota.cc 的
+#   #ifndef 分支永远失效，导致 chatbox 板一直检查 sisi 的 version.json。
+
+choice
+    prompt "Flash Assets"
+    default FLASH_DEFAULT_ASSETS
+    help
+        Select the assets to flash.
+
+    config FLASH_NONE_ASSETS
+        bool "Do not flash assets"
+    config FLASH_DEFAULT_ASSETS
+        bool "Flash Default Assets"
+    config FLASH_CUSTOM_ASSETS
+        bool "Flash Custom Assets"
+endchoice
+
+config CUSTOM_ASSETS_FILE
+    depends on FLASH_CUSTOM_ASSETS
+    string "Custom Assets File"
+    default "assets.bin"
+    help
+        The custom assets file to flash.
+        It can be a local file relative to the project directory or a remote url.
+
+choice
+    prompt "Default Language"
+    default LANGUAGE_ZH_CN
+    help
+        Select device display language
+
+    config LANGUAGE_ZH_CN
+        bool "Chinese"
+    config LANGUAGE_ZH_TW
+        bool "Chinese Traditional"
+    config LANGUAGE_EN_US
+        bool "English"
+    config LANGUAGE_JA_JP
+        bool "Japanese"
+    config LANGUAGE_KO_KR
+        bool "Korean"
+endchoice
+
+choice BOARD_TYPE
+    prompt "Board Type"
+    default SISI_BOARD
+    help
+        Board type. 开发板类型
+    config SISI_BOARD
+        bool "思思开发板 WiFi (集成功放麦克风)"
+        depends on IDF_TARGET_ESP32S3
+    config STANDAR_BOARD
+        bool "ESP32S3标准开发板 WiFi (单板)"
+        depends on IDF_TARGET_ESP32S3
+    config CHATBOX_BOARD
+        bool "Chatbox开发板 WiFi (ES7210+ES8311音频模块)"
+        depends on IDF_TARGET_ESP32S3
+    config MEETING_BOARD
+        bool "Meeting Dev Board WiFi (立创实战派ESP32-S3)"
+        depends on IDF_TARGET_ESP32S3
+    config STICK_S3_BOARD
+        bool "M5Stack StickS3 WiFi (ES8311+PM1+1.9寸ST7789)"
+        depends on IDF_TARGET_ESP32S3
+    config ANAN_BOARD
+        bool "Anan开发板 WiFi (单麦克风+2.0寸ST7789 SPI)"
+        depends on IDF_TARGET_ESP32S3
+endchoice
+
+choice DISPLAY_LCD_TYPE
+    depends on STANDAR_BOARD || ANAN_BOARD
+    prompt "LCD Type"
+    default LCD_ST7789_240X320
+    help
+        LCD Display Type
+    config LCD_ST7789_240X320
+        bool "ST7789 240*320, IPS"
+endchoice
+
+menu "WiFi Configuration Method"
+    help
+        WiFi Configuration Method Selection
+    config USE_HOTSPOT_WIFI_PROVISIONING
+        bool "Hotspot"
+        default y
+        help
+            Use WiFi Hotspot to transmit WiFi configuration data
+    config USE_ACOUSTIC_WIFI_PROVISIONING
+        bool "Acoustic"
+        help
+            Use audio signal to transmit WiFi configuration data
+
+    config USE_ESP_BLUFI_WIFI_PROVISIONING
+        bool "Esp Blufi"
+        help
+            Use esp blufi protocol to transmit WiFi configuration data
+        select BT_ENABLED
+        select BT_BLE_42_FEATURES_SUPPORTED
+        select BT_BLE_BLUFI_ENABLE
+        select MBEDTLS_DHM_C
+endmenu
+
+menu "Audio"
+    help
+        Configure audio processing options.
+
+config USE_AUDIO_PROCESSOR
+    bool "Enable Audio Processor (AFE: Noise Reduction, VAD, AEC)"
+    default y
+    depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4) && SPIRAM
+    help
+        Enable AFE audio processing pipeline (NS, VAD, AEC).
+        Requires ESP32-S3 with PSRAM.
+
+config USE_DEVICE_AEC
+    bool "Enable Device Side AEC (Hardware Echo Cancellation)"
+    default n
+    depends on USE_AUDIO_PROCESSOR && MEETING_BOARD
+    help
+        Enable hardware echo cancellation on device side.
+        Requires a board with reference channel support (e.g., Meeting Board).
+        When disabled, server side software AEC is used instead.
+
+config USE_SERVER_AEC
+    bool "Enable Server Side AEC"
+    default y
+    depends on USE_AUDIO_PROCESSOR
+    help
+        Use server-side software echo cancellation.
+        Recommended when device-side AEC is not available.
+
+config USE_CUSTOM_WAKE_WORD
+    bool "Enable Local Custom Wake Word (Multinet)"
+    default n
+    depends on USE_AUDIO_PROCESSOR
+    help
+        打包 multinet 离线唤醒模型进 assets 分区（CustomWakeWord "你好如意"）。
+        mn7_cn 模型 2.6MB——仅 16MB flash 板（meeting，assets 4M）可启用；
+        8MB 板（stick-s3）装不下，唤醒走服务端 ASR anyWordWakeup。
+
+endmenu
+
+choice RECEIVE_CUSTOM_MESSAGE
+    bool "Enable Custom Message Reception"
+    default n
+    help
+        Enable custom message reception, allow the device to receive custom messages from the server (preferably through the MQTT protocol)
+
+endchoice
+
+endmenu

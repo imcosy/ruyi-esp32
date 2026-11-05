@@ -1,0 +1,61 @@
+# sisi-esp-server 运行配置
+# 复制为 config.yaml 后修改；管理后台 /admin 可视化编辑并自动保存
+
+server:
+  host: 0.0.0.0
+  port: 8892
+  # 固件首帧 api_key 白名单（逗号分隔转列表），留空 [] 不校验
+  api_keys: []
+  # 管理后台访问密码，留空不鉴权（仅限内网）
+  admin_password: ""
+
+# ── 默认模式：如意云 S2S API（asr/llm/tts 全走云端，本服务只做转发）──
+nice:
+  url: wss://dev.nice-ai.cn/s2s/
+  api_key: ""            # 向如意云申请的开发者密钥
+
+# ── 自编排模式：三个能力各自选择提供商 ──
+# asr.provider: doubao | aliyun（=nice 时整体走如意云）
+asr:
+  provider: nice
+  doubao:
+    app_id: ""
+    access_token: ""
+    model: bigmodel
+  aliyun:
+    api_key: ""
+    model: paraformer-realtime-v2
+
+# llm.provider: doubao | aliyun | deepseek | zhipu（四家均 OpenAI 兼容）
+llm:
+  provider: nice
+  doubao:
+    api_key: ""
+    model: doubao-seed-1.6-flash-250715
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+  aliyun:
+    api_key: ""
+    model: qwen-plus
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  deepseek:
+    api_key: ""
+    model: deepseek-chat
+    base_url: https://api.deepseek.com/v1
+  zhipu:
+    api_key: ""
+    model: glm-4-flash
+    base_url: https://open.bigmodel.cn/api/paas/v4
+
+# tts.provider: doubao | aliyun
+tts:
+  provider: nice
+  doubao:
+    app_id: ""
+    access_token: ""
+    voice: zh_female_ruyi
+    speed_ratio: 1.0
+  aliyun:
+    api_key: ""
+    model: cosyvoice-v2
+    voice: longxiaochun
+    speed_level: 1

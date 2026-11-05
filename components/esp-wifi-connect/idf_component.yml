@@ -1,0 +1,14 @@
+dependencies:
+  idf: '>=5.3'
+description: ESP32 WiFi Configuration
+files:
+  exclude:
+  - .git
+  - dist
+license: MIT
+repository: git://github.com/78/esp-wifi-connect.git
+repository_info:
+  commit_sha: a7b34167750f0188486b489240268d0f7c306caf
+  path: .
+url: https://github.com/78/esp-wifi-connect
+version: 3.1.2

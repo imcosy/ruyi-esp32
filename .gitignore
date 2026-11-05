@@ -1,0 +1,17 @@
+# 服务端运行产物
+server/config.yaml
+server/__pycache__/
+server/**/__pycache__/
+server/*.pyc
+
+# ESP-IDF 构建产物
+build/
+sdkconfig.old
+dependencies.lock
+managed_components/
+
+# 本地构建配置含真实 api_key，绝不入库；公开仓库用 sdkconfig.defaults（密钥为空）
+sdkconfig
+
+# 会议机等本地实验数据
+*.csv
