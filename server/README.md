@@ -1,128 +1,305 @@
+<div align="center">
+
 # sisi-esp-server
 
-基于 [sisi_esp](../)（xiaozhi-esp32 深度改造）固件的 **S2S（Speech-to-Speech）开源服务端**。
+**一条 WebSocket，跑完语音识别 → 大模型对话 → 语音合成**
 
-一条 WebSocket 承载「流式语音识别 → 大模型对话 → 流式语音合成」全链路：
-固件端 VAD 说话 → opus 上行 → ASR → LLM 流式分句 → TTS 边合成边下发 opus → 固件边收边播。
-全程内存调度、不落盘。
+Python 3.10+ · FastAPI · 全链路流式 · 不落盘
+
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-uvicorn-009688.svg)](https://fastapi.tiangolo.com/)
+[![Opus](https://img.shields.io/badge/Audio-Opus%2016k%2F48k-2F80ED.svg)](#协议速查)
+[![Mode](https://img.shields.io/badge/Runtime-cloud%20proxy%20%7C%20self%20orchestrated-8b5cf6.svg)](#两种工作模式)
+
+[快速开始](#快速开始) · [两种模式](#两种工作模式) · [浏览器 Demo](#浏览器-demo) · [协议](#协议速查) · [部署](#部署到公网)
+
+</div>
+
+---
+
+## 它是做什么的
+
+固件只说两种语言：**JSON 事件** 和 **二进制音频帧**。这个服务端负责把这两样东西
+翻译成「识别 → 对话 → 合成」，再把结果流回去：
+
+```mermaid
+flowchart LR
+    A["ESP32 固件<br/>opus 16k 上行"] -->|WebSocket| B["S2S 服务端"]
+    B -->|"模式一：原样转发"| C["如意云 S2S"]
+    B -->|"模式二：本地编排"| D["ASR"]
+    D --> E["LLM 流式"]
+    E -->|逐句| F["TTS 流式"]
+    F -->|"opus 48k 下行"| B
+    C -->|"JSON + 音频"| B
+    B --> A
+```
+
+- **不落盘**：音频块在内存里进、内存里出
+- **不攒批**：TTS 合成一块就编码一块、下发一块，设备边收边播
+- **不绑定**：换 ASR / LLM / TTS 只改配置，编排代码零改动
+
+---
 
 ## 两种工作模式
 
-| 模式 | 说明 | 配置 |
-|------|------|------|
-| **如意云 API（默认）** | 本服务只做固件协议 ↔ 云端的透明转发，ASR/LLM/TTS 编排全部在如意云完成，一行代码不用改 | 只填一把 `nice.api_key` |
-| **自编排（对接厂商）** | 本服务在本机串接 ASR / LLM / TTS 三段流水线，密钥全在自己手里 | ASR：字节豆包 / 阿里 Paraformer；LLM：字节豆包 / 阿里通义 / DeepSeek / 智谱 GLM；TTS：字节豆包 / 阿里 CosyVoice |
+| | 如意云透传（默认） | 自编排 |
+| :--- | :--- | :--- |
+| **一句话** | 只做协议转发 | 本机串起三段流水线 |
+| **需要配置** | `nice.api_key` | 各厂商 Key / AppID |
+| **编排在哪** | 如意云 | 本服务 |
+| **延迟** | 多一跳本机转发 | 取决于所连厂商 |
+| **适合** | 快速跑通、免逐家开通 | 数据自持、音色与模型自选 |
 
-切换与密钥配置全部在 **管理后台 `/admin`** 完成，改完自动保存、即时生效（下一条连接用新配置）。
+切换与填 Key 都在 **`/admin`**：点选标签、改完自动保存，**下一条连接**即生效（不重启服务）。
+
+```yaml
+asr: {provider: nice | doubao | aliyun}
+llm: {provider: nice | doubao | aliyun | deepseek | zhipu}
+tts: {provider: nice | doubao | aliyun}
+```
+
+> 三个能力全为 `nice` → 透传模式；任一不是 `nice` → 走本机自编排。
+
+---
+
+## 支持的服务商
+
+| 能力 | 服务商 | 说明 |
+| :--- | :--- | :--- |
+| **ASR** | 字节豆包 SAUC | 流式识别，`bigmodel` |
+| | 阿里 Paraformer | `paraformer-realtime-v2` |
+| **LLM** | 字节豆包 | 火山方舟，OpenAI 兼容 |
+| | 阿里通义 | DashScope compatible-mode |
+| | DeepSeek | `deepseek-chat` |
+| | 智谱 GLM | `glm-4-flash` |
+| **TTS** | 字节豆包 | 单向流式合成 |
+| | 阿里 CosyVoice | `cosyvoice-v2` |
+| **全部** | 如意云 | 一把 Key，含克隆音色与情绪音色 |
+
+---
 
 ## 快速开始
 
 ```bash
-# 1. 系统依赖：libopus（opus 编解码）
+# 1. 系统依赖：libopus
 sudo apt install -y libopus0
 
-# 2. 安装（Python 3.10+）
-cd server
+# 2. Python 依赖（建议独立虚拟环境）
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3. 配置
 cp config.example.yaml config.yaml
-# 编辑 config.yaml：填入 nice.api_key（或切换自编排并填厂商密钥）
+#   最小可用：只需填 nice.api_key
+#   免费申请：https://dev.nice-ai.cn/podcast/api-docs
 
 # 4. 启动
-python run.py
-# 默认 0.0.0.0:8892，浏览器打开 http://<host>:8892/admin 管理配置
+python run.py          # 默认 0.0.0.0:8892
 ```
+
+| 地址 | 说明 |
+| :--- | :--- |
+| `http://<host>:8892/demo` | 浏览器对话页（不接固件即可试通链路） |
+| `http://<host>:8892/admin` | 管理后台（模式 / 密钥 / 连通性测试） |
+| `ws://<host>:8892/s2s/ws` | 固件接入端点 |
+
+---
+
+## 浏览器 Demo
+
+打开 `/demo`，点一下话筒就开始：
+
+- **自动连续对话**：本地能量 VAD 切句，静音 600 ms 自动提交一句，再点一次结束
+- **底部三键**：左「发照片」、中「话筒」、右「摄像头」
+- **摄像头上屏**：画面铺满做聊天背景，气泡半透明毛玻璃
+- **每句带画面**：摄像头开启时，每说一句自动抓一帧（448 px / JPEG q0.6），与该句音频同帧送 AI
+- **语音回放**：下行 opus 用 WebCodecs 解码，Chrome / Edge / Safari 16.4+
+
+> Demo 与固件走**同一套协议**，只把上行从「opus 裸流」换成「整段 PCM base64」，
+> 因此两种模式都能直接用，适合联调与演示。
+
+---
 
 ## 固件接入
 
-固件侧 `CONFIG_OTA_URL` 指向本服务即可（同一地址同时是 OTA 与 S2S 入口）：
+固件侧只需一个地址（同一地址同时是 OTA 与 S2S 入口）：
 
 ```
-idf.py menuconfig  →  NiceAI Configuration  →  OTA/S2S URL
-    wss://你的服务器:端口/s2s/ws
+idf.py menuconfig → NiceAI Configuration
+  ├─ S2S API Key     ← 你的密钥（与 server.api_keys 白名单对应，留空则不校验）
+  └─ OTA / S2S URL   ← wss://你的服务器:8892/s2s/ws
 ```
 
-**API Key**：`menuconfig → NiceAI Configuration → S2S API Key` 填入你的密钥。
-默认走如意云时需要一把如意云 S2S Key，免费申请：**https://dev.nice-ai.cn/podcast/api-docs**（「申请 S2S Key」接口）。
-仓库不携带任何密钥：`sdkconfig.defaults` 里 `CONFIG_S2S_API_KEY` 为空，首次编译前请复制为 `sdkconfig` 或直接在 menuconfig 填写。
+固件连接时自动附带 `?api_key=<编译值>&firmware_version=<版本>`。
 
-固件连接后会自动带上 `?api_key=<编译值>&firmware_version=<版本>`。
-服务端 `server.api_keys` 白名单非空时校验首帧 `api_key`，为空则不校验（内网自用）。
-
-## 浏览器 Demo（不接固件也能试）
-
-启动后打开 `http://<host>:<端口>/demo`：
-
-- 点话筒开始 **自动连续对话**：本地能量 VAD 自动切句（静音 600ms 提交一句），再点一次结束
-- 底部左侧发照片（相册识图），右侧开关摄像头；摄像头画面作为聊天背景，气泡半透明
-- 开摄像头后 **每句话自动抓一帧**（448px / JPEG q0.6），与该句音频放进同一个 JSON 帧送 AI——
-  模型既听到你说话，也看到你当时的画面
-- 下行语音用浏览器 WebCodecs 解码 opus 实时播放（Chrome / Edge / Safari 16.4+）
-
-Demo 走的是同一套 `/s2s/ws` 协议，只把上行从「opus 裸流」换成了「整段 PCM base64」，
-方便浏览器直接录音；两种模式（如意云 / 自编排）都能用。
+---
 
 ## 协议速查
 
-固件与本服务、以及如意云 S2S API 使用同一套协议：
+### 上行（固件 → 服务端）
+
+| 帧 | 内容 | 说明 |
+| :--- | :--- | :--- |
+| 首帧 JSON | `api_key` `format` `sample_rate` `language` `voice` `output_format` `stream_text` `stream_upload` | 认证 + 本连接默认参数 |
+| `hello` | `board` `has_aec` | 设备能力上报 |
+| **Binary** | `[2B 小端长度][opus 帧 20ms@16k]` × N | 边说边传 |
+| `listen_stop` | — | 兼容旧客户端，触发本轮 |
+| `abort` | — | 打断当前生成 |
+| `tts_playback_done` | — | 设备真正播完 |
+
+**浏览器 / 手机端（Demo 用法）**
+
+| 帧 | 内容 | 说明 |
+| :--- | :--- | :--- |
+| JSON | `{audio: "<base64 PCM16 16k>", image: "<base64 JPEG>"}` | 一轮一帧，`image` 可选（多模态） |
+| JSON | `{noaudio: true, text, image}` | 纯图片 / 纯文本轮 |
+
+> ⚠️ **连接的第一轮必须把音频放进首帧**（或紧接着发 Binary）。
+> 之后的轮次才可以发普通 JSON 帧——这是如意云与自编排模式共同的行为。
+
+### 下行（服务端 → 固件）
+
+| 消息 | 关键字段 | 说明 |
+| :--- | :--- | :--- |
+| `asr_result` | `text` `lang` `speaker_name` | 识别结果，可先上屏 |
+| `llm_start` | `round` | 开始生成 |
+| `llm_chunk` | `text` | 文本增量（`stream_text=true`） |
+| `tts_start` | `sample_rate` `format` `channels` | 下行音频参数（48 kHz / opus） |
+| `tts_sentence` | `index` `text` | 每句合成前的文本 |
+| **Binary** | — | opus 裸流，边合成边下发 |
+| `tts_sentence_end` | `index` | 本句音频结束 |
+| `tts_done` | `round` | 本轮音频发送完毕 |
+| `done` | `asr_text` `llm_text` `total_ms` | 本轮结束 |
+| `aborted` | `asr_text` `llm_text` | 被客户端打断 |
+| `error` | `message` | 任意阶段出错 |
+
+一轮的典型顺序：
 
 ```
-固件 → 服务端
-  首帧 JSON   {api_key, format:"opus_raw", sample_rate:16000, language, voice,
-               ai_character_id, output_format:"opus", stream_text, stream_upload,
-               client_type:"esp32", board, user_token, [noaudio, text]}
-  hello       {type:"hello", board:"sisi", has_aec:true}
-  Binary      opus 裸流：[2字节小端长度][opus帧(20ms@16k)]×N（边说边传）
-  listen_stop {type:"listen_stop"}        ← VAD 静音，触发 ASR→LLM→TTS
-  abort       {type:"abort"}              ← 打断当前生成
-  tts_playback_done {type:"tts_playback_done"}
-
-浏览器 / 手机端（demo 页）
-  JSON        {audio:"<base64 PCM16 16k>", image:"<base64 JPEG>"}   ← 一轮一帧
-              image 可选：带上则本轮走多模态（看图回答）
-  纯图片轮    {noaudio:true, text:"...", image:"<base64 JPEG>"}
-  ⚠️ 连接的第一轮必须把音频放进首帧（云端首轮只认「首帧音频」或 Binary 帧）
-
-服务端 → 固件
-  asr_result      {type, round, text}
-  llm_start       {type, round}
-  llm_chunk       {type, round, text}          （stream_text=true 时）
-  tts_start       {type, round, sample_rate:48000, format:"opus_raw", channels:1}
-  tts_sentence    {type, round, index, text}   ← 每句合成前推文本
-  Binary          opus 裸流（48k/64kbps，帧结构同上行）
-  tts_sentence_end{type, round, index}
-  tts_done        {type, round}
-  done            {type, round, asr_text, llm_text, total_ms}
-  aborted         {type, round, asr_text, llm_text}
-  error           {type, [round], message}
+asr_result → llm_start → llm_chunk* → tts_start
+           → (tts_sentence → Binary* → tts_sentence_end)*
+           → tts_done → done
 ```
+
+---
+
+## 新增一家厂商
+
+1. 在 `s2s/providers/` 实现 `BaseASR` / `BaseLLM` / `BaseTTS` 之一：
+
+```python
+class MyLLM(BaseLLM):
+    async def stream_chat(self, system_prompt, messages):
+        # 逐段 yield 文本增量即可，编排层负责分句与 TTS
+        ...
+```
+
+2. `providers/__init__.py` 注册 `build_*` 分支
+3. `config.py` 的 `DEFAULT_CONFIG` 补一节默认值
+4. `static/admin.html` 加一个厂商标签
+
+会话编排（`session.py`）不感知厂商差异。
+
+---
 
 ## 目录结构
 
 ```
 server/
-├── run.py                  启动脚本
-├── config.yaml             运行配置（不入 git，/admin 可视化编辑）
+├── run.py                  启动脚本（读 config.yaml 的 host/port）
+├── config.example.yaml     配置样例（复制为 config.yaml）
 ├── requirements.txt
 └── s2s/
-    ├── app.py              FastAPI：固件 WS 端点 + 管理后台 API
-    ├── config.py           配置加载/原子保存/就绪校验
-    ├── session.py          固件会话：S2S 协议状态机 + ASR→LLM→TTS 流水线
-    ├── audio.py            opus 编解码（上下行裸流）+ 重采样
-    ├── static/admin.html   管理后台配置页
-    ├── static/demo.html    浏览器对话 Demo（录音 + 摄像头 + 气泡界面）
+    ├── app.py              FastAPI：WS 端点 / 管理后台 API / Demo 页
+    ├── config.py           YAML 加载、原子保存、就绪校验
+    ├── session.py          S2S 状态机 + ASR→LLM→TTS 流水线
+    ├── audio.py            opus 裸流编解码 + 重采样（48k 下行）
+    ├── static/
+    │   ├── admin.html      管理后台（标签点选 / 自动保存 / 居中 toast）
+    │   └── demo.html       浏览器对话页（录音 + 摄像头 + 气泡界面）
     └── providers/
-        ├── base.py         ASR/LLM/TTS 统一接口（新增厂商实现这三个类即可）
-        ├── nice.py         默认模式：如意云 S2S 透明代理
-        ├── llm_openai.py   OpenAI 兼容流式（豆方舟/通义/DeepSeek/智谱 四家通用）
-        ├── asr_doubao.py   字节火山流式语音识别
-        ├── asr_aliyun.py   阿里百炼 Paraformer 实时识别
-        ├── tts_doubao.py   字节豆包流式语音合成
-        └── tts_aliyun.py   阿里百炼 CosyVoice 流式合成
+        ├── base.py         ASR / LLM / TTS 三个基类
+        ├── nice.py         如意云透明代理
+        ├── llm_openai.py   OpenAI 兼容流式（四家通用）
+        ├── asr_doubao.py   字节火山流式识别
+        ├── asr_aliyun.py   阿里 Paraformer
+        ├── tts_doubao.py   字节豆包流式合成
+        └── tts_aliyun.py   阿里 CosyVoice
 ```
 
-## 新增一家厂商
+---
 
-实现 `providers/base.py` 三个基类之一，在 `providers/__init__.py` 注册，`config.py`
-补默认配置，`admin.html` 加一个 chip —— 完事。会话编排层不感知厂商差异。
+## 部署到公网
+
+**systemd**
+
+```ini
+[Unit]
+Description=sisi-esp-server
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/sisi-esp/server
+ExecStart=/opt/sisi-esp/server/.venv/bin/python run.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Nginx（把 WebSocket 反代出去，注意关闭缓冲）**
+
+```nginx
+location /s2s/ {
+    proxy_pass http://127.0.0.1:8892/s2s/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_buffering off;          # ★ 音频必须即时转发
+    proxy_read_timeout 300s;
+}
+```
+
+固件地址填 `wss://你的域名/s2s/ws`。
+
+---
+
+## 常见问题
+
+<details>
+<summary><b>启动报 <code>libopus.so</code> 找不到</b></summary>
+
+`sudo apt install -y libopus0`（Debian/Ubuntu）或 `brew install opus`（macOS）。
+</details>
+
+<details>
+<summary><b>连上了但一直没回复，日志显示「首帧等待超时」</b></summary>
+
+第一轮没收到音频。核对固件 `stream_upload` 是否为 `true`，或 Demo 是否把 `audio` 放进了首帧。
+</details>
+
+<details>
+<summary><b>声音断续 / 首字被吞</b></summary>
+
+- 下行为 48 kHz opus，确认设备解码器采样率与 `tts_start.sample_rate` 一致
+- 客户端必须在收到 `tts_start` 时就初始化解码器，不能等数据到了才建
+</details>
+
+<details>
+<summary><b>能同时服务多台设备吗？</b></summary>
+
+可以。每条 WebSocket 连接一个独立会话，ASR/LLM/TTS 实例按连接创建；配置只有一份 `config.yaml`，改动对下一条连接生效。
+</details>
+
+<details>
+<summary><b>如何保护管理后台？</b></summary>
+
+`config.yaml` 里设置 `server.admin_password`，页面会要求输入口令（`X-Admin-Token` 校验）。
+公网部署建议再用 Nginx Basic Auth 兜一层。
+</details>
+
+---
+
+## License
+
+[MIT](../LICENSE)
