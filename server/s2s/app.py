@@ -15,13 +15,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
+import time
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import (FastAPI, File, Form, Header, HTTPException, UploadFile,
+                     WebSocket, WebSocketDisconnect)
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import config as cfgmod
-from .providers import build_llm
+from . import store
+from . import voice_audio
+from .providers import build_asr, build_llm, build_tts
 from .providers.nice import NiceS2SProxy
 from .session import FirmwareSession
 
@@ -53,6 +58,137 @@ async def admin_page():
 async def demo_page():
     """浏览器对话 demo：麦克风 PCM 上行 + WebCodecs 解码 opus 下行。"""
     return HTMLResponse((_STATIC / "demo.html").read_text(encoding="utf-8"))
+
+
+# ─── 音色工坊：录/传一段参考音 → 降噪 → 生成音色 → 建 AI 角色 ───
+
+@app.get("/studio")
+async def studio_page():
+    return HTMLResponse((_STATIC / "studio.html").read_text(encoding="utf-8"))
+
+
+@app.get("/api/studio/info")
+async def studio_info(x_admin_token: str | None = Header(default=None)):
+    _check_admin(x_admin_token)
+    cfg = cfgmod.load_config()
+    tts = _studio_tts(cfg)
+    return {
+        "tts_provider": cfg["tts"]["provider"],
+        "supports_ref": bool(getattr(tts, "supports_ref", False)),
+        "sample_rate": int(getattr(tts, "sample_rate", 24000)),
+        "asr_enabled": cfg["asr"]["provider"] in ("doubao", "aliyun"),
+        "voices": len(store.list_voices()),
+        "ais": len(store.list_ais()),
+    }
+
+
+def _studio_tts(cfg: dict):
+    """取 TTS 实例；nice 模式（整体转发）没有本地 TTS 实例，返回 None。"""
+    try:
+        return build_tts(cfg)
+    except ValueError:
+        return None
+
+
+@app.get("/api/voices")
+async def voices_list(x_admin_token: str | None = Header(default=None)):
+    _check_admin(x_admin_token)
+    return {"voices": store.list_voices()}
+
+
+@app.post("/api/voices")
+async def voices_create(
+    file: UploadFile = File(...),
+    name: str = Form(default=""),
+    ref_text: str = Form(default=""),
+    x_admin_token: str | None = Header(default=None),
+):
+    """上传/录制的一段话 → 解码、降噪、裁静音、归一化 → 存成音色。"""
+    _check_admin(x_admin_token)
+    raw = await file.read()
+    try:
+        pcm = voice_audio.prepare_reference(raw)
+    except voice_audio.AudioError as exc:
+        raise HTTPException(400, str(exc))
+
+    voice_name = (name or "").strip()[:32] or "我的音色"
+    text = (ref_text or "").strip()
+    # 自编排模式下顺手用 ASR 补出参考文本（零样本模型给参考文本相似度更高）
+    cfg = cfgmod.load_config()
+    if not text and cfg["asr"]["provider"] in ("doubao", "aliyun"):
+        try:
+            text = (await build_asr(cfg).transcribe(pcm)).strip()
+        except Exception:
+            text = ""
+
+    tmp = store.VOICE_DIR / f"{secrets.token_hex(8)}.wav"
+    voice_audio.write_wav(str(tmp), pcm)
+    v = store.add_voice(voice_name, str(tmp), text, round(voice_audio.duration(pcm), 2))
+    return {"voice": v}
+
+
+@app.get("/api/voices/{voice_id}/audio")
+async def voice_audio_get(voice_id: int, token: str = ""):
+    """参考音试听（audio 标签不能带 header，用 query token 校验）。"""
+    _check_admin(token or None)
+    v = store.get_voice(voice_id)
+    if not v:
+        raise HTTPException(404, "音色不存在")
+    data = Path(v["ref_path"]).read_bytes()
+    return Response(data, media_type="audio/wav")
+
+
+@app.post("/api/voices/{voice_id}/preview")
+async def voice_preview(voice_id: int, x_admin_token: str | None = Header(default=None)):
+    """用该音色合成一句固定的话，直接返回 wav。"""
+    _check_admin(x_admin_token)
+    v = store.get_voice(voice_id)
+    if not v:
+        raise HTTPException(404, "音色不存在")
+    cfg = cfgmod.load_config()
+    tts = _studio_tts(cfg)
+    if tts is None or not getattr(tts, "supports_ref", False):
+        raise HTTPException(
+            400, f"当前 TTS（{cfg['tts']['provider']}）不支持参考音，"
+                 "请把 tts.provider 设为 local 并配置自建零样本 TTS 地址")
+    pcm = b"".join([c async for c in tts.synthesize(
+        "你好，我是如意，很高兴认识你。", ref={"path": v["ref_path"], "text": v["ref_text"]})])
+    return Response(voice_audio.to_wav(pcm, tts.sample_rate), media_type="audio/wav")
+
+
+@app.delete("/api/voices/{voice_id}")
+async def voices_delete(voice_id: int, x_admin_token: str | None = Header(default=None)):
+    _check_admin(x_admin_token)
+    if not store.delete_voice(voice_id):
+        raise HTTPException(404, "音色不存在")
+    return {"ok": True}
+
+
+@app.get("/api/ais")
+async def ais_list(x_admin_token: str | None = Header(default=None)):
+    _check_admin(x_admin_token)
+    return {"ais": store.list_ais(), "voices": store.list_voices()}
+
+
+@app.post("/api/ais")
+async def ais_create(body: dict, x_admin_token: str | None = Header(default=None)):
+    _check_admin(x_admin_token)
+    name = (body.get("name") or "").strip()[:32]
+    if not name:
+        raise HTTPException(400, "请填写 AI 名字")
+    prompt = (body.get("prompt") or "").strip()
+    voice_id = int(body.get("voice_id") or 0)
+    if voice_id and not store.get_voice(voice_id):
+        raise HTTPException(400, "音色不存在")
+    return {"ai": store.add_ai(name, prompt, voice_id)}
+
+
+@app.delete("/api/ais/{ai_id}")
+async def ais_delete(ai_id: int, x_admin_token: str | None = Header(default=None)):
+    _check_admin(x_admin_token)
+    if not store.delete_ai(ai_id):
+        raise HTTPException(404, "AI 角色不存在")
+    return {"ok": True}
 
 
 @app.get("/admin/api/config")

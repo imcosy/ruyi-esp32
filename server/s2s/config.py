@@ -63,11 +63,13 @@ DEFAULT_CONFIG: dict = {
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
         },
     },
-    # tts: nice | doubao | aliyun
+    # tts: nice | doubao | aliyun | local
+    # local = 自建零样本 TTS（音色工坊录的参考音才有意义），按 HTTP 流式 PCM 对接
     "tts": {
         "provider": "nice",
         "doubao": {"app_id": "", "access_token": "", "voice": "zh_female_ruyi", "speed_ratio": 1.0},
         "aliyun": {"api_key": "", "model": "cosyvoice-v2", "voice": "longxiaochun", "speed_level": 1},
+        "local": {"url": "", "sample_rate": 24000},
     },
 }
 
@@ -143,4 +145,7 @@ def _tts_ready(cfg: dict, provider: str) -> tuple[bool, str]:
     if provider == "aliyun":
         a = cfg["tts"]["aliyun"]
         return (bool(a.get("api_key")), "api_key")
+    if provider == "local":
+        loc = cfg["tts"].get("local", {})
+        return (bool(loc.get("url")), "url（自建 TTS 服务地址）")
     return False, f"未知提供商 {provider}"

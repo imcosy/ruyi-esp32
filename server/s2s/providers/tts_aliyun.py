@@ -37,7 +37,7 @@ class AliyunTTS(BaseTTS):
         self._voice = cfg.get("voice", "longxiaochun")
         self._speed = float(cfg.get("speed_level", 1))
 
-    async def synthesize(self, text: str):
+    async def synthesize(self, text: str, ref: dict | None = None):
         if not text.strip():
             return
         task_id = str(uuid.uuid4())

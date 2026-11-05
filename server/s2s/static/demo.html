@@ -348,7 +348,9 @@ const BASE_FIRST = {
 
 function wsUrl() {
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-  return proto + location.host + '/s2s/ws';
+  // 页面可能挂在子路径下（如 /ruyi/demo），WS 端点跟着页面走，避免打到别的服务
+  const base = location.pathname.replace(/[^/]*$/, '');
+  return proto + location.host + base + 's2s/ws';
 }
 function bindSocket(ws) {
   ws.binaryType = 'arraybuffer';

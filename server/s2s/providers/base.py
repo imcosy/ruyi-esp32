@@ -35,10 +35,16 @@ class BaseLLM(abc.ABC):
 
 
 class BaseTTS(abc.ABC):
-    """语音合成。流式产出 PCM int16 原生采样率块（sample_rate 类属性声明采样率）。"""
+    """语音合成。流式产出 PCM int16 原生采样率块（sample_rate 类属性声明采样率）。
+
+    ref：可选的参考音（音色工坊里录制的）——
+        {"path": "/abs/xxx.wav", "text": "参考音对应的文字"}
+        支持零样本克隆的 provider 用它来"像谁"；厂商预置音色的 provider 忽略即可。
+    """
 
     sample_rate: int = 24000
+    supports_ref: bool = False
 
     @abc.abstractmethod
-    def synthesize(self, text: str) -> "asyncio_generator[bytes]":
+    def synthesize(self, text: str, ref: dict | None = None) -> "asyncio_generator[bytes]":
         ...

@@ -34,4 +34,7 @@ def build_tts(cfg: dict) -> BaseTTS:
     if provider == "aliyun":
         from .tts_aliyun import AliyunTTS
         return AliyunTTS(cfg["tts"]["aliyun"])
-    raise ValueError(f"TTS 提供商无效：{provider}（自编排模式只支持 doubao/aliyun）")
+    if provider == "local":
+        from .tts_local import LocalTTS
+        return LocalTTS(cfg["tts"]["local"])
+    raise ValueError(f"TTS 提供商无效：{provider}（支持 doubao/aliyun/local）")

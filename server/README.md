@@ -13,6 +13,8 @@ Python 3.10+ · FastAPI · 全链路流式 · 不落盘
 
 [快速开始](#快速开始) · [两种模式](#两种工作模式) · [浏览器 Demo](#浏览器-demo) · [协议](#协议速查) · [部署](#部署到公网)
 
+> **在线体验**：<https://dev.nice-ai.cn/ruyi/demo>（官方托管的 Demo 页，无需安装）
+
 </div>
 
 ---
@@ -74,6 +76,7 @@ tts: {provider: nice | doubao | aliyun}
 | | 智谱 GLM | `glm-4-flash` |
 | **TTS** | 字节豆包 | 单向流式合成 |
 | | 阿里 CosyVoice | `cosyvoice-v2` |
+| | 自建零样本 TTS | 吃 `/studio` 录的参考音（HTTP 流式 PCM） |
 | **全部** | 如意云 | 一把 Key，含克隆音色与情绪音色 |
 
 ---
@@ -119,6 +122,39 @@ python run.py          # 默认 0.0.0.0:8892
 > 因此两种模式都能直接用，适合联调与演示。
 
 ---
+
+## 音色工坊
+
+服务端内置 `/studio`：录一段 3~10 秒的话（或上传音频）→ 自动降噪 / 裁静音 / 归一化 →
+存成音色 → 绑到 AI 角色。设备说话就是你的声音。
+
+- 浏览器录音直接采 16 kHz PCM，**不依赖 ffmpeg**；上传 mp3/m4a 才需要系统装 ffmpeg
+- 数据全在 `server/data/`：`sisi.db`（SQLite）+ `voices/*.wav`，备份拷这一个目录即可
+- 「合成」按钮要求 TTS 支持参考音 → 在 `/admin` 把 TTS 切到「自建 · 零样本 TTS」
+
+### 接入自建零样本 TTS
+
+`tts.provider = local` 时，服务端向 `tts.local.url` 发送：
+
+```
+POST <url>
+{
+  "text": "要合成的文字",
+  "format": "pcm",
+  "sample_rate": 24000,
+  "ref_audio": "<base64 wav>",   // 音色工坊的参考音，可省略
+  "ref_text": "参考音对应的文字"   // 可省略
+}
+→ 200，响应体为 PCM int16 单声道裸流（支持 chunked 流式返回）
+```
+
+CosyVoice2 / IndexTTS / VoxCPM / GPT-SoVITS 等自建推理服务，外面套这一层协议即可，
+本项目不需要改任何代码。
+
+### AI 角色
+
+`POST /api/ais`（名字 + 人设提示词 + 音色）。设备首帧带 `ai_id` 即生效；
+只想换声音不换人设时，用 `voice: "studio:3"`。
 
 ## 固件接入
 
@@ -214,9 +250,12 @@ server/
     ├── config.py           YAML 加载、原子保存、就绪校验
     ├── session.py          S2S 状态机 + ASR→LLM→TTS 流水线
     ├── audio.py            opus 裸流编解码 + 重采样（48k 下行）
+    ├── voice_audio.py      参考音处理：解码 / 降噪 / 裁静音 / 归一化
+    ├── store.py            SQLite 单文件存储（音色 / AI 角色）
     ├── static/
     │   ├── admin.html      管理后台（标签点选 / 自动保存 / 居中 toast）
-    │   └── demo.html       浏览器对话页（录音 + 摄像头 + 气泡界面）
+    │   ├── demo.html       浏览器对话页（录音 + 摄像头 + 气泡界面）
+    │   └── studio.html     音色工坊（录音 / 上传 / 建 AI）
     └── providers/
         ├── base.py         ASR / LLM / TTS 三个基类
         ├── nice.py         如意云透明代理
@@ -224,7 +263,8 @@ server/
         ├── asr_doubao.py   字节火山流式识别
         ├── asr_aliyun.py   阿里 Paraformer
         ├── tts_doubao.py   字节豆包流式合成
-        └── tts_aliyun.py   阿里 CosyVoice
+        ├── tts_aliyun.py   阿里 CosyVoice
+        └── tts_local.py    自建零样本 TTS（吃音色工坊的参考音）
 ```
 
 ---

@@ -1,5 +1,6 @@
 # 服务端运行产物
 server/config.yaml
+server/data/
 server/__pycache__/
 server/**/__pycache__/
 server/*.pyc

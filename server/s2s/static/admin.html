@@ -48,7 +48,10 @@
 <body>
 <div class="wrap">
   <h1>sisi-esp-server</h1>
-  <div class="sub">ESP32 语音对话服务端 · 改完即自动保存</div>
+  <div class="sub">ESP32 语音对话服务端 · 改完即自动保存 ·
+    <a href="studio" style="color:#7fb2ff">音色工坊</a> ·
+    <a href="demo" style="color:#7fb2ff">语音对话 Demo</a>
+  </div>
 
   <div class="card">
     <h2>服务模式</h2>
@@ -129,6 +132,7 @@
       <div class="chips" id="ttsChips">
         <div class="chip" data-v="doubao">字节 · 豆包</div>
         <div class="chip" data-v="aliyun">阿里 · CosyVoice</div>
+        <div class="chip" data-v="local">自建 · 零样本 TTS</div>
       </div>
       <div class="vendor" id="tts_doubao">
         <h3>字节火山引擎</h3>
@@ -146,6 +150,14 @@
         <div class="row">
           <div class="field"><label>API Key</label><input data-path="tts/aliyun/api_key"></div>
           <div class="field"><label>音色（如 longxiaochun）</label><input data-path="tts/aliyun/voice"></div>
+        </div>
+      </div>
+      <div class="vendor" id="tts_local">
+        <h3>自建零样本 TTS</h3>
+        <div class="desc">把「音色工坊」录制的参考音交给自建推理服务。接口约定见 server/README.md（POST JSON，返回 PCM 流）。</div>
+        <div class="row">
+          <div class="field"><label>服务地址（http://host:port/tts）</label><input data-path="tts/local/url"></div>
+          <div class="field"><label>输出采样率</label><input data-path="tts/local/sample_rate"></div>
         </div>
       </div>
     </div>

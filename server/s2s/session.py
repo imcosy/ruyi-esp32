@@ -27,6 +27,7 @@ import time
 from .audio import DOWN_SAMPLE_RATE, OpusStreamDecoder, OpusStreamEncoder
 from .config import all_providers_ready
 from .providers import build_asr, build_llm, build_tts
+from .store import get_ai, get_voice
 
 # 对话历史上限（含 system 之外的消息条数）
 _MAX_HISTORY = 20
@@ -51,6 +52,7 @@ class FirmwareSession:
         self._system_prompt = ""
         self._language = "zh"
         self._voice = ""                # 固件首帧带的音色偏好（厂商侧映射见各 provider）
+        self._voice_ref: dict | None = None  # 音色工坊的参考音（零样本 TTS 用）
         self._stream_text = True
         self._client_type = ""
         self._board = ""
@@ -109,8 +111,24 @@ class FirmwareSession:
         self._tts = build_tts(self._cfg)
         self._apply_overrides(frame)
         self._client_type = frame.get("client_type", "")
+        # AI 角色（音色工坊里创建）：人设提示词 + 绑定音色，一并在首帧生效
+        ai_id = int(frame.get("ai_id") or 0)
+        if ai_id:
+            ai = get_ai(ai_id)
+            if ai:
+                if ai.get("prompt"):
+                    self._system_prompt = ai["prompt"]
+                self._bind_studio_voice(ai.get("voice_id") or 0)
         if not self._system_prompt:
             self._system_prompt = self._default_system_prompt()
+
+    def _bind_studio_voice(self, voice_id: int) -> None:
+        """把音色工坊的参考音绑到本会话（provider 不支持参考音时自动忽略）。"""
+        if not voice_id:
+            return
+        v = get_voice(int(voice_id))
+        if v:
+            self._voice_ref = {"path": v["ref_path"], "text": v.get("ref_text") or ""}
 
     # ── 消息分发（首帧与非首帧共用同一张路由表） ────────────────
 
@@ -149,6 +167,10 @@ class FirmwareSession:
             self._upstream_format = frame["format"]
         if frame.get("voice"):
             self._voice = str(frame["voice"])
+            # 显式引用音色工坊的音色：voice="studio:3"
+            m = re.match(r"^studio:(\d+)$", self._voice)
+            if m:
+                self._bind_studio_voice(int(m.group(1)))
         self._stream_text = bool(frame.get("stream_text", self._stream_text))
         if frame.get("system_prompt"):
             self._system_prompt = frame["system_prompt"]
@@ -248,7 +270,7 @@ class FirmwareSession:
                                   "index": sent_index, "text": sentence})
                 if encoder is None:
                     encoder = OpusStreamEncoder(self._tts.sample_rate)
-                async for pcm in self._tts.synthesize(sentence):
+                async for pcm in self._tts.synthesize(sentence, ref=self._voice_ref):
                     if self._abort_evt.is_set():
                         raise asyncio.CancelledError
                     opus = encoder.feed(pcm)

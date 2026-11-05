@@ -39,7 +39,7 @@ class DoubaoTTS(BaseTTS):
         self._voice = cfg.get("voice", "zh_female_ruyi")
         self._speed = float(cfg.get("speed_ratio", 1.0))
 
-    async def synthesize(self, text: str):
+    async def synthesize(self, text: str, ref: dict | None = None):
         if not text.strip():
             return
         async with websockets.connect(

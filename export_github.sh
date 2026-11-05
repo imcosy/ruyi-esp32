@@ -28,6 +28,7 @@ rsync -a --delete \
   --exclude='sdkconfig.old' \
   --exclude='sdkconfig.anan' \
   --exclude='server/config.yaml' \
+  --exclude='server/data/' \
   --exclude='server/__pycache__/' \
   --exclude='**/__pycache__/' \
   --exclude='火种计划S2_参赛方案.md' \
