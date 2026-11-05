@@ -114,6 +114,16 @@
     color: rgba(255,255,255,.72); text-shadow: 0 1px 8px rgba(0,0,0,.7);
     transition: opacity .2s;
   }
+  /* 输入电平条：说话时会跳动，不动就说明浏览器没拿到麦克风 */
+  #meter {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(140px + env(safe-area-inset-bottom));
+    width: 132px; height: 4px; border-radius: 999px; overflow: hidden; z-index: 20;
+    background: rgba(255,255,255,.12); opacity: 0; transition: opacity .2s;
+  }
+  body.live #meter { opacity: 1; }
+  #meter i { display: block; height: 100%; width: 0; border-radius: 999px;
+    background: linear-gradient(90deg,#3b8cf5,#4FBFA5); transition: width .07s linear; }
   footer {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
     display: flex; align-items: center; justify-content: center; gap: 34px;
@@ -202,6 +212,7 @@
 </header>
 
 <main id="chat"></main>
+<div id="meter"><i></i></div>
 <div id="hint">点击话筒，和如意说话</div>
 
 <footer>
@@ -249,7 +260,8 @@ const S = {
   aiBusy: false,        // AI 正在思考/说话（半双工，期间不听）
   cam: { on: false, stream: null },
   echoSkip: false,      // 本地已加用户气泡时，跳过服务端回显的 asr_result
-  rec: { ctx: null, stream: null, node: null, chunks: [], pre: [], voiceRun: 0, silentMs: 0, capturing: false, samples: 0 },
+  rec: { ctx: null, stream: null, node: null, chunks: [], pre: [], voiceRun: 0, silentMs: 0,
+         capturing: false, inRate: 16000, pos: 0 },
   dec: null, playCtx: null, gain: null, nextAt: 0, playSrcs: [], ttsDone: false,
   ai: { bub: null, text: '', final: true, useChunk: false },
 };
@@ -529,14 +541,14 @@ function stopPlayback() {
 /* ───────── 上行录音（AudioWorklet 16k int16 + 能量 VAD） ───────── */
 const WORKLET = `
 class Cap extends AudioWorkletProcessor {
-  constructor() { super(); this.buf = new Int16Array(512); this.n = 0; }
+  constructor() { super(); this.buf = new Float32Array(512); this.n = 0; }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
-    if (!ch) return true;
-    for (let i = 0; i < ch.length; i++) {
-      const s = ch[i] < -1 ? -1 : (ch[i] > 1 ? 1 : ch[i]);
-      this.buf[this.n++] = s < 0 ? s * 0x8000 : s * 0x7fff;
-      if (this.n === 512) { this.port.postMessage(this.buf.slice(0)); this.n = 0; }
+    if (ch) {
+      for (let i = 0; i < ch.length; i++) {
+        this.buf[this.n++] = ch[i];
+        if (this.n === 512) { this.port.postMessage(this.buf.slice(0)); this.n = 0; }
+      }
     }
     return true;
   }
@@ -559,23 +571,32 @@ async function startLive() {
     URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' })));
   const src = S.rec.ctx.createMediaStreamSource(S.rec.stream);
   const node = new AudioWorkletNode(S.rec.ctx, 'cap');
-  node.port.onmessage = e => onChunk(new Int16Array(e.data));
+  node.port.onmessage = e => onChunk(resample16k(new Float32Array(e.data)));
   src.connect(node);
+  // ★ AudioWorklet 必须挂在通往 destination 的图上才会被渲染（默认 0 增益，不出声）
+  const sink = S.rec.ctx.createGain();
+  sink.gain.value = 0;
+  node.connect(sink);
+  sink.connect(S.rec.ctx.destination);
 
   S.rec.node = node;
+  S.rec.inRate = S.rec.ctx.sampleRate;   // 个别浏览器不认 16k，会回落到系统采样率
+  S.rec.pos = 0;
   S.rec.chunks = []; S.rec.pre = []; S.rec.voiceRun = 0;
-  S.rec.silentMs = 0; S.rec.capturing = false; S.rec.samples = 0;
+  S.rec.silentMs = 0; S.rec.capturing = false;
   S.live = true;
   micState('live');
-  setHint(S.cam.on ? '聆听中…画面会随每句话一起送给如意' : '聆听中…再点一次话筒结束');
+  document.body.classList.add('live');
+  setHint('聆听中…说完一句会自动发送（上方音量条会随说话跳动）');
 }
 
 function stopLive() {
   S.live = false;
+  document.body.classList.remove('live');
   if (S.rec.node) { S.rec.node.port.onmessage = null; try { S.rec.node.disconnect(); } catch (e) {} S.rec.node = null; }
   if (S.rec.stream) { S.rec.stream.getTracks().forEach(t => t.stop()); S.rec.stream = null; }
   if (S.rec.ctx) { S.rec.ctx.close(); S.rec.ctx = null; }
-  S.rec.chunks = []; S.rec.pre = []; S.rec.capturing = false; S.rec.samples = 0;
+  S.rec.chunks = []; S.rec.pre = []; S.rec.capturing = false;
   stopPlayback();
   S.aiBusy = false;
   micState(null);
@@ -583,16 +604,45 @@ function stopLive() {
   if (S.ai.bub && !S.ai.final) aiFinish();
 }
 
-function onChunk(i16) {
-  if (!S.live) return;
+/** 非 16k 的输入做线性重采样（带跨块余量，块边界不丢样） */
+function resample16k(f32) {
+  const rate = S.rec.inRate || 16000;
+  if (rate === 16000) return f32;
+  const step = rate / 16000;
+  const out = new Float32Array(Math.max(0, Math.floor((f32.length - S.rec.pos) / step)));
+  let o = 0, pos = S.rec.pos;
+  while (pos < f32.length) {
+    const i = Math.floor(pos), frac = pos - i;
+    const a = f32[i], b = (i + 1 < f32.length) ? f32[i + 1] : a;
+    out[o++] = a + (b - a) * frac;
+    pos += step;
+  }
+  S.rec.pos = pos - f32.length;
+  return out;
+}
+
+function updateMeter(rms) {
+  const bar = $('#meter i');
+  if (bar) bar.style.width = Math.min(100, rms * 900).toFixed(1) + '%';
+}
+
+function onChunk(f32) {
+  if (!S.live || !f32.length) return;
+  const n = f32.length;
+  const i16 = new Int16Array(n);
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const s = f32[i] < -1 ? -1 : (f32[i] > 1 ? 1 : f32[i]);
+    i16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    sum += s * s;
+  }
+  const rms = Math.sqrt(sum / n);
+  updateMeter(rms);
   if (S.aiBusy) {                       // AI 说话期间不听（半双工，避免回采自问自答）
     S.rec.chunks = []; S.rec.pre = []; S.rec.capturing = false;
-    S.rec.voiceRun = 0; S.rec.silentMs = 0; S.rec.samples = 0;
+    S.rec.voiceRun = 0; S.rec.silentMs = 0;
     return;
   }
-  let sum = 0;
-  for (let i = 0; i < i16.length; i++) sum += i16[i] * i16[i];
-  const rms = Math.sqrt(sum / i16.length) / 32768;
 
   if (rms > CFG.energy) {
     S.rec.voiceRun++;
@@ -601,10 +651,8 @@ function onChunk(i16) {
       S.rec.capturing = true;             // 连续 2 帧有声 → 开始一句
       S.rec.chunks = S.rec.pre.slice();
       S.rec.pre = [];
-      S.rec.samples = S.rec.chunks.reduce((n, c) => n + c.length, 0);
     }
     S.rec.chunks.push(i16);
-    S.rec.samples += i16.length;
     S.rec.silentMs = 0;
   } else {
     S.rec.voiceRun = 0;
@@ -627,9 +675,9 @@ function submitUtterance() {
   const chunks = S.rec.chunks;
   S.rec.chunks = []; S.rec.pre = []; S.rec.capturing = false;
   S.rec.silentMs = 0; S.rec.voiceRun = 0;
-  const samples = S.rec.samples;
-  S.rec.samples = 0;
-  if (!chunks.length || samples * 1000 / 16000 < CFG.minVoiceMs) return;
+  // 长度只从 chunks 算一次，避免与运行计数不同步（静音尾帧曾漏计导致越界）
+  const samples = chunks.reduce((n, c) => n + c.length, 0);
+  if (!samples || samples * 1000 / 16000 < CFG.minVoiceMs) return;
 
   const pcm = new Int16Array(samples);
   let off = 0;
