@@ -38,8 +38,9 @@ rsync -a --delete \
 # ② 清洗板型配置里的密钥（sisi/meeting 板型配置开源保留，key 置空）
 sed -i 's/CONFIG_S2S_API_KEY="[^"]*"/CONFIG_S2S_API_KEY=""/' "$DST"/sdkconfig.* 2>/dev/null || true
 
-# ③ 终检：公开仓库不允许出现任何真实密钥（sk- 后跟 20+ 位字母数字）
-if grep -rIlnE 'sk-[a-zA-Z0-9]{20,}' "$DST" --exclude-dir=.git 2>/dev/null ; then
+# ③ 终检：公开仓库不允许出现任何真实密钥
+#    兼容带连字符的密钥（sk-sisi-esp-xxxx 这类不会被 sk-[a-zA-Z0-9]{20,} 命中）
+if grep -rIlnE 'sk-[A-Za-z0-9][A-Za-z0-9_-]{15,}' "$DST" --exclude-dir=.git 2>/dev/null ; then
   echo "!! 发现疑似密钥，中止发布"; exit 1
 fi
 

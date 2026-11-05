@@ -91,7 +91,7 @@ pip install -r requirements.txt
 # 3. 配置
 cp config.example.yaml config.yaml
 #   最小可用：只需填 nice.api_key
-#   免费申请：https://dev.nice-ai.cn/podcast/api-docs
+#   免费申请：https://dev.nice-ai.cn/open/ （手机号登录 → 完善资料 → 申请 Key）
 
 # 4. 启动
 python run.py          # 默认 0.0.0.0:8892

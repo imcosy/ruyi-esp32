@@ -132,7 +132,7 @@ python run.py
 | `http://localhost:8892/demo` | 浏览器对话页：点话筒连续对话；开摄像头后每句话都带一帧画面给 AI |
 | `http://localhost:8892/admin` | 管理后台：切换模式、填各家密钥、测试连通性 |
 
-**申请如意云 S2S Key（免费）**：<https://dev.nice-ai.cn/podcast/api-docs> → 「申请 S2S Key」接口。
+**申请如意云 S2S Key（免费）**：手机号登录 <https://dev.nice-ai.cn/open/> → 完善资料 → 申请 Key。
 
 > 仓库不携带任何密钥：`sdkconfig.defaults` 里的 `CONFIG_S2S_API_KEY` 为空，请自行填写。
 
@@ -246,7 +246,7 @@ ruyi-esp32/
 ## 相关链接
 
 - 服务端文档与协议详解：[server/README.md](server/README.md)
-- 如意云 S2S Key 申请：<https://dev.nice-ai.cn/podcast/api-docs>
+- 如意云 S2S Key 申请：<https://dev.nice-ai.cn/open/>
 - 上游固件项目：[xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)
 
 ## License

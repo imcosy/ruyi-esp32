@@ -10,11 +10,12 @@ config S2S_API_KEY
     string "S2S API Key"
     default ""
     help
-        API Key for S2S (Speech-to-Speech) service authentication.
-        Leave empty to use the server's default key, or fill your own key
-        applied from https://dev.nice-ai.cn/podcast/api-docs (申请 S2S Key).
-        编译前在 menuconfig 填入你的 S2S API Key；
-        免费申请：https://dev.nice-ai.cn/podcast/api-docs
+        API Key for the S2S (Speech-to-Speech) service.
+
+        Get a free key at https://dev.nice-ai.cn/open/
+        Sign in with your phone number, complete your profile, then create a key.
+
+        Leave empty to keep the server-side whitelist disabled (internal use).
 
 # ★ OTA_VERSION_URL 项已删除（2026-09-12）：OTA 版本检查地址按板型在 ota.cc 编译期
 #   决定（kOtaVersionUrl）。教训：Kconfig string 项被 sdkconfig 固化后，ota.cc 的
