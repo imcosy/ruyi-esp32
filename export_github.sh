@@ -43,7 +43,7 @@ if grep -rIlnE 'sk-[a-zA-Z0-9]{20,}' "$DST" --exclude-dir=.git 2>/dev/null ; the
   echo "!! 发现疑似密钥，中止发布"; exit 1
 fi
 
-# ④ 提交推送
+# ④ 提交推送（ruyi-esp32 专用 deploy key：~/.ssh/id_ruyi）
 cd "$DST"
 if [ ! -d .git ]; then
   git init -b main
@@ -55,5 +55,5 @@ if git diff --cached --quiet; then
 else
   git commit -m "$MSG"
 fi
-git push -u origin main
+GIT_SSH_COMMAND="ssh -i $HOME/.ssh/id_ruyi -o IdentitiesOnly=yes" git push -u origin main
 echo "已发布到 github.com/imcosy/ruyi-esp32"

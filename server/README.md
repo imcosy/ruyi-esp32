@@ -50,6 +50,19 @@ idf.py menuconfig  →  NiceAI Configuration  →  OTA/S2S URL
 固件连接后会自动带上 `?api_key=<编译值>&firmware_version=<版本>`。
 服务端 `server.api_keys` 白名单非空时校验首帧 `api_key`，为空则不校验（内网自用）。
 
+## 浏览器 Demo（不接固件也能试）
+
+启动后打开 `http://<host>:<端口>/demo`：
+
+- 点话筒开始 **自动连续对话**：本地能量 VAD 自动切句（静音 600ms 提交一句），再点一次结束
+- 底部左侧发照片（相册识图），右侧开关摄像头；摄像头画面作为聊天背景，气泡半透明
+- 开摄像头后 **每句话自动抓一帧**（448px / JPEG q0.6），与该句音频放进同一个 JSON 帧送 AI——
+  模型既听到你说话，也看到你当时的画面
+- 下行语音用浏览器 WebCodecs 解码 opus 实时播放（Chrome / Edge / Safari 16.4+）
+
+Demo 走的是同一套 `/s2s/ws` 协议，只把上行从「opus 裸流」换成了「整段 PCM base64」，
+方便浏览器直接录音；两种模式（如意云 / 自编排）都能用。
+
 ## 协议速查
 
 固件与本服务、以及如意云 S2S API 使用同一套协议：
@@ -64,6 +77,12 @@ idf.py menuconfig  →  NiceAI Configuration  →  OTA/S2S URL
   listen_stop {type:"listen_stop"}        ← VAD 静音，触发 ASR→LLM→TTS
   abort       {type:"abort"}              ← 打断当前生成
   tts_playback_done {type:"tts_playback_done"}
+
+浏览器 / 手机端（demo 页）
+  JSON        {audio:"<base64 PCM16 16k>", image:"<base64 JPEG>"}   ← 一轮一帧
+              image 可选：带上则本轮走多模态（看图回答）
+  纯图片轮    {noaudio:true, text:"...", image:"<base64 JPEG>"}
+  ⚠️ 连接的第一轮必须把音频放进首帧（云端首轮只认「首帧音频」或 Binary 帧）
 
 服务端 → 固件
   asr_result      {type, round, text}
@@ -92,6 +111,7 @@ server/
     ├── session.py          固件会话：S2S 协议状态机 + ASR→LLM→TTS 流水线
     ├── audio.py            opus 编解码（上下行裸流）+ 重采样
     ├── static/admin.html   管理后台配置页
+    ├── static/demo.html    浏览器对话 Demo（录音 + 摄像头 + 气泡界面）
     └── providers/
         ├── base.py         ASR/LLM/TTS 统一接口（新增厂商实现这三个类即可）
         ├── nice.py         默认模式：如意云 S2S 透明代理

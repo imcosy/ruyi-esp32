@@ -49,6 +49,12 @@ async def admin_page():
     return HTMLResponse((_STATIC / "admin.html").read_text(encoding="utf-8"))
 
 
+@app.get("/demo")
+async def demo_page():
+    """浏览器对话 demo：麦克风 PCM 上行 + WebCodecs 解码 opus 下行。"""
+    return HTMLResponse((_STATIC / "demo.html").read_text(encoding="utf-8"))
+
+
 @app.get("/admin/api/config")
 async def get_config(x_admin_token: str | None = Header(default=None)):
     _check_admin(x_admin_token)

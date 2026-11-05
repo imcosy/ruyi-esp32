@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import re
 import time
@@ -44,6 +45,7 @@ class FirmwareSession:
         self._running: asyncio.Task | None = None   # 本轮 ASR→LLM→TTS 流水线任务
         self._abort_evt = asyncio.Event()
         self._asr_pcm = bytearray()     # 本轮累积的 PCM 16k
+        self._upstream_format = "opus_raw"  # opus_raw=固件（需解码）；pcm=浏览器 demo（直用）
         self._decoder = OpusStreamDecoder(16000)
         self._messages: list[dict] = []  # 对话历史（OpenAI 格式）
         self._system_prompt = ""
@@ -67,7 +69,11 @@ class FirmwareSession:
                 if not self._round_open and (self._running is None or self._running.done()):
                     self._round += 1
                     self._round_open = True
-                self._asr_pcm += self._decoder.feed(msg)
+                if self._upstream_format == "pcm":
+                    # 浏览器 demo 客户端：AudioWorklet 采出的 PCM int16 16k 直接送 ASR
+                    self._asr_pcm += msg
+                else:
+                    self._asr_pcm += self._decoder.feed(msg)
                 continue
             try:
                 frame = json.loads(msg)
@@ -119,6 +125,10 @@ class FirmwareSession:
             await self._on_abort()
         elif mtype == "tts_playback_done":
             pass  # 设备端播完通知；自编排模式按 abort 打断，无需额外处理
+        elif frame.get("audio") or frame.get("image"):
+            # 单帧一轮（浏览器/手机端）：整段音频 base64 + 可选图片放同一个 JSON 帧，
+            # 与固件的 binary + listen_stop 等价，多模态图片随本轮一起送 LLM
+            await self._on_round_frame(frame)
         elif frame.get("noaudio") and frame.get("text"):
             # 唤醒词：固件在连接中途重发首帧（noaudio+text，app.cc 唤醒路径），
             # 或连接首帧直接带 noaudio+text——都跳过 ASR 直接 LLM
@@ -134,6 +144,9 @@ class FirmwareSession:
 
     def _apply_overrides(self, frame: dict) -> None:
         self._language = frame.get("language", self._language)
+        # format: opus_raw（固件默认）| pcm（浏览器 demo，上行二进制为 PCM int16 16k）
+        if frame.get("format") in ("opus_raw", "pcm"):
+            self._upstream_format = frame["format"]
         if frame.get("voice"):
             self._voice = str(frame["voice"])
         self._stream_text = bool(frame.get("stream_text", self._stream_text))
@@ -163,6 +176,20 @@ class FirmwareSession:
         self._round_open = False
         self._running = asyncio.create_task(self._run_pipeline(pcm))
 
+    async def _on_round_frame(self, frame: dict) -> None:
+        """单帧一轮：audio=base64 PCM int16（sample_rate 由首帧声明，默认 16k），image=base64 JPEG。"""
+        if self._running and not self._running.done():
+            await self._on_abort()
+        self._apply_overrides(frame)
+        audio_b64 = frame.get("audio") or ""
+        pcm = base64.b64decode(audio_b64) if audio_b64 else b""
+        text = (frame.get("text") or "").strip()
+        if not pcm and not text:
+            return  # 空轮（既无音频也无文本）
+        self._round += 1
+        self._running = asyncio.create_task(
+            self._run_pipeline(pcm if pcm else text, frame.get("image") or ""))
+
     async def _on_abort(self) -> None:
         if self._running and not self._running.done():
             self._abort_evt.set()
@@ -176,8 +203,8 @@ class FirmwareSession:
 
     # ── 流水线：ASR → LLM → 分句 → TTS → 下发 ──────────────────
 
-    async def _run_pipeline(self, asr_input) -> None:
-        """asr_input: str（noaudio 文本）或 bytes（PCM 16k）。"""
+    async def _run_pipeline(self, asr_input, image_b64: str = "") -> None:
+        """asr_input: str（noaudio 文本）或 bytes（PCM 16k）；image_b64: 本轮随行的图片（可选）。"""
         rnd = self._round
         started = time.monotonic()
         asr_text = asr_input if isinstance(asr_input, str) else ""
@@ -187,7 +214,7 @@ class FirmwareSession:
                 asr_text = await self._asr.transcribe(asr_input)
                 if self._abort_evt.is_set():
                     raise asyncio.CancelledError
-            if not asr_text.strip():
+            if not asr_text.strip() and not image_b64:
                 await self._send({"type": "done", "round": rnd, "asr_text": "",
                                   "llm_text": "", "total_ms": self._ms(started)})
                 return
@@ -195,6 +222,13 @@ class FirmwareSession:
 
             await self._send({"type": "llm_start", "round": rnd})
             history = self._messages[-_MAX_HISTORY:]
+            if image_b64:
+                # 多模态：图片只挂在本轮 user 消息上，不写进对话历史（避免历史膨胀）
+                history = history + [{"role": "user", "content": [
+                    {"type": "text", "text": asr_text or "（用户发来一张图片，请看看）"},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                ]}]
             full_text, sentence_iter = "", self._stream_llm_sentences(history)
             sent_index = 0
             encoder: OpusStreamEncoder | None = None

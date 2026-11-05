@@ -32,28 +32,34 @@ class NiceS2SProxy:
         self._api_key = nice_api_key
 
     async def run(self, client_ws) -> None:
-        """接管固件连接：连接云端 → 双向转发 → 任一方向结束即收尾。"""
+        """接管客户端连接：连接云端 → 双向转发 → 任一方向结束即收尾。"""
         async with connect(self._upstream_url, max_size=None,
                            ping_interval=20, ping_timeout=20) as upstream:
             first_frame_rewritten = False
 
             async def client_to_cloud():
+                """单循环消费客户端：Starlette 的 iter_text/iter_bytes 不能并发
+                （两者抢同一个 receive 队列，文本帧落进 iter_bytes 会抛 KeyError('bytes')），
+                必须自己收原始 ASGI 消息再按 text/bytes 分发。"""
                 nonlocal first_frame_rewritten
-                async for msg in client_ws.iter_text():
-                    # 首帧 JSON 替换 api_key 后转发；后续 JSON（listen_stop/abort/...）原样透传
-                    if not first_frame_rewritten:
-                        first_frame_rewritten = True
-                        try:
-                            frame = json.loads(msg)
-                            frame["api_key"] = self._api_key
-                            msg = json.dumps(frame, ensure_ascii=False)
-                        except json.JSONDecodeError:
-                            pass
-                    await upstream.send(msg)
-
-            async def client_binary_to_cloud():
-                async for msg in client_ws.iter_bytes():
-                    await upstream.send(msg)
+                while True:
+                    msg = await client_ws.receive()
+                    if msg.get("type") == "websocket.disconnect":
+                        return
+                    text = msg.get("text")
+                    if text is not None:
+                        # 首帧 JSON 替换 api_key 后转发；后续 JSON（listen_stop/abort/...）原样透传
+                        if not first_frame_rewritten:
+                            first_frame_rewritten = True
+                            try:
+                                frame = json.loads(text)
+                                frame["api_key"] = self._api_key
+                                text = json.dumps(frame, ensure_ascii=False)
+                            except json.JSONDecodeError:
+                                pass
+                        await upstream.send(text)
+                    elif msg.get("bytes") is not None:
+                        await upstream.send(msg["bytes"])
 
             async def cloud_to_client():
                 async for msg in upstream:
@@ -64,7 +70,6 @@ class NiceS2SProxy:
 
             tasks = [
                 asyncio.create_task(client_to_cloud()),
-                asyncio.create_task(client_binary_to_cloud()),
                 asyncio.create_task(cloud_to_client()),
             ]
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
