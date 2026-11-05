@@ -1,6 +1,6 @@
 <div align="center">
 
-# 如意 · Ruyi ESP32
+<img src="docs/banner.svg" alt="如意 Ruyi ESP32" width="100%">
 
 **一块 ESP32-S3 + 一条 WebSocket = 完整可用的中文语音助手**
 
@@ -201,6 +201,7 @@ ruyi-esp32/
 │       ├── audio.py         Opus 编解码与重采样
 │       ├── static/          管理后台 / 浏览器对话页
 │       └── providers/       各厂商实现
+├── docs/banner.svg          仓库头图
 └── LICENSE
 ```
 

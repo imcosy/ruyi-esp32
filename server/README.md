@@ -1,6 +1,6 @@
 <div align="center">
 
-# sisi-esp-server
+<img src="../docs/banner.svg" alt="如意 Ruyi ESP32" width="100%">
 
 **一条 WebSocket，跑完语音识别 → 大模型对话 → 语音合成**
 

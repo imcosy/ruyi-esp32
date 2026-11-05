@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-label="Ruyi ESP32 — open-source voice assistant firmware and streaming S2S server">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a2c"/>
+      <stop offset="0.6" stop-color="#0a0f19"/>
+      <stop offset="1" stop-color="#06090f"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8fd0ff"/>
+      <stop offset="0.5" stop-color="#2F80ED"/>
+      <stop offset="1" stop-color="#1b5bbf"/>
+    </linearGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2F80ED" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#4FBFA5" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="400" fill="url(#bg)"/>
+
+  <!-- 氛围色块（低透明度，任何渲染器都不会压过正文） -->
+  <circle cx="1060" cy="30" r="300" fill="#2F80ED" opacity="0.10"/>
+  <circle cx="60" cy="400" r="240" fill="#4FBFA5" opacity="0.07"/>
+
+  <!-- 网格 -->
+  <g stroke="#ffffff" stroke-opacity="0.035" stroke-width="1">
+    <path d="M0 120H1200M0 240H1200M0 360H1200"/>
+    <path d="M200 0V400M400 0V400M600 0V400M800 0V400M1000 0V400"/>
+  </g>
+
+  <!-- 标识 -->
+  <circle cx="104" cy="146" r="38" fill="url(#brand)"/>
+  <circle cx="104" cy="146" r="45" fill="none" stroke="#8fd0ff" stroke-opacity="0.30" stroke-width="1.5"/>
+  <text x="104" y="160" text-anchor="middle" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif"
+        font-size="34" font-weight="700" fill="#ffffff">如</text>
+
+  <!-- 标题 -->
+  <text x="168" y="134" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif"
+        font-size="46" font-weight="700" fill="#ffffff" letter-spacing="0.5">如意 · Ruyi ESP32</text>
+  <text x="170" y="176" font-family="system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
+        font-size="18" fill="#9fb3c8">Open-source voice assistant — ESP32 firmware + streaming S2S server</text>
+
+  <!-- 标签 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif" font-size="14">
+    <rect x="170" y="208" width="112" height="34" rx="17" fill="#2F80ED" fill-opacity="0.18" stroke="#2F80ED" stroke-opacity="0.45"/>
+    <text x="226" y="230" text-anchor="middle" fill="#bcdcff">全链路流式</text>
+
+    <rect x="292" y="208" width="106" height="34" rx="17" fill="#4FBFA5" fill-opacity="0.16" stroke="#4FBFA5" stroke-opacity="0.42"/>
+    <text x="345" y="230" text-anchor="middle" fill="#b9f2e4">端侧 VAD</text>
+
+    <rect x="408" y="208" width="122" height="34" rx="17" fill="#8b5cf6" fill-opacity="0.16" stroke="#8b5cf6" stroke-opacity="0.42"/>
+    <text x="469" y="230" text-anchor="middle" fill="#ddd0ff">多模态一轮</text>
+
+    <rect x="540" y="208" width="100" height="34" rx="17" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.18"/>
+    <text x="590" y="230" text-anchor="middle" fill="#c9d6e4">不落盘</text>
+  </g>
+
+  <!-- 声波 -->
+  <path d="M170 318H780" stroke="url(#rule)" stroke-width="1"/>
+  <g fill="#2F80ED" opacity="0.85">
+    <rect x="170" y="314" width="5" height="8"   rx="2.5"/>
+    <rect x="188" y="309" width="5" height="18"  rx="2.5"/>
+    <rect x="206" y="300" width="5" height="36"  rx="2.5"/>
+    <rect x="224" y="288" width="5" height="60"  rx="2.5"/>
+    <rect x="242" y="302" width="5" height="32"  rx="2.5"/>
+    <rect x="260" y="280" width="5" height="76"  rx="2.5"/>
+    <rect x="278" y="294" width="5" height="48"  rx="2.5"/>
+  </g>
+  <g fill="#4FBFA5" opacity="0.85">
+    <rect x="296" y="272" width="5" height="92"  rx="2.5"/>
+    <rect x="314" y="298" width="5" height="40"  rx="2.5"/>
+    <rect x="332" y="284" width="5" height="68"  rx="2.5"/>
+    <rect x="350" y="306" width="5" height="24"  rx="2.5"/>
+    <rect x="368" y="290" width="5" height="56"  rx="2.5"/>
+    <rect x="386" y="266" width="5" height="104" rx="2.5"/>
+    <rect x="404" y="296" width="5" height="44"  rx="2.5"/>
+    <rect x="422" y="278" width="5" height="80"  rx="2.5"/>
+    <rect x="440" y="304" width="5" height="28"  rx="2.5"/>
+    <rect x="458" y="288" width="5" height="60"  rx="2.5"/>
+    <rect x="476" y="310" width="5" height="16"  rx="2.5"/>
+    <rect x="494" y="298" width="5" height="40"  rx="2.5"/>
+    <rect x="512" y="312" width="5" height="12"  rx="2.5"/>
+  </g>
+
+  <!-- 芯片示意 -->
+  <g transform="translate(930,318)">
+    <rect x="-78" y="-50" width="156" height="100" rx="18" fill="#0f1726" stroke="#2F80ED" stroke-opacity="0.5" stroke-width="1.5"/>
+    <rect x="-38" y="-18" width="76" height="36" rx="9" fill="#2F80ED" fill-opacity="0.20" stroke="#2F80ED" stroke-opacity="0.6"/>
+    <text x="0" y="5" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="#bcdcff">S2S</text>
+    <g stroke="#4FBFA5" stroke-opacity="0.5" stroke-width="2" stroke-linecap="round">
+      <path d="M-78 -32H-104M-78 -11H-104M-78 11H-104M-78 32H-104"/>
+      <path d="M78 -32H104M78 -11H104M78 11H104M78 32H104"/>
+    </g>
+  </g>
+</svg>
